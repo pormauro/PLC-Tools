@@ -4,7 +4,7 @@ Ingeniería inversa reproducible de proyectos FATEK WinProLadder (.pdw) y sus fo
 
 ## Estado
 
-**Fase 1 — reconocimiento estructural / sólo lectura.**
+**Fase 1 — reconocimiento estructural y recuperación experimental / sin escritura de PDW.**
 
 Confirmado sobre el par mínimo VACIO.pdw vs X0-Y0.pdw:
 
@@ -16,17 +16,26 @@ Confirmado sobre el par mínimo VACIO.pdw vs X0-Y0.pdw:
 - desde 0x120 existe una periodicidad estructural dominante de 1.280 bytes;
 - al dividir por 1.280 bytes aparece en ambos el patrón A + 31xB + C + 18xD + E(parcial);
 - en los registros repetidos, VACIO XOR X0-Y0 tiene período exacto de 256 bytes;
-- como 1.280 = 5 x 256, XOR entre registros alineados del mismo archivo permite cancelar esa capa periódica sin conocer todavía la clave/algoritmo;
-- normalizando el registro 0 contra el registro repetido 1, el cambio lógico bruto se reduce de 65.282 bytes a **15 bytes no nulos**.
+- como 1.280 = 5 x 256, XOR entre registros alineados permite cancelar esa capa periódica;
+- el primer grupo mide exactamente 40.960 bytes = 20.480 words = 20K words;
+- suponiendo que los 31 registros repetidos representan memoria borrada 0xFF, la recuperación revela `FBS40003`, el marcador `55 AA` y 31 registros totalmente 0xFF;
+- el proyecto X0-Y0 agrega exactamente dos words candidatos de programa: `0x0040` y `0x00C1`.
 
-Esto es evidencia fuerte de una transformación XOR/periódica o equivalente sobre una estructura estable. Todavía no se afirma que todo PDW use un único XOR simple ni que los 15 bytes sean exclusivamente el rung: faltan más fixtures controlados.
+La coincidencia con la capacidad documentada de programa FBs (20K words) y la estructura recuperada hacen de esta identificación una **hipótesis fuerte**, pero todavía no un contrato de escritura.
 
 ## Herramienta actual
 
     python FATEK/WinProLadder/pdw_tools/analyze.py inspect proyecto.pdw
     python FATEK/WinProLadder/pdw_tools/analyze.py compare VACIO.pdw X0-Y0.pdw
+    python FATEK/WinProLadder/pdw_tools/analyze.py recover-program X0-Y0.pdw
+    python FATEK/WinProLadder/pdw_tools/analyze.py recover-program X0-Y0.pdw --output program_candidate.bin
 
-El analizador es estrictamente de sólo lectura.
+El analizador nunca modifica el PDW fuente. `recover-program` sólo puede escribir una imagen derivada separada cuando se pasa `--output`.
+
+Ver:
+
+- `docs/FORMAT_PDW.md`
+- `docs/PROGRAM_MEMORY.md`
 
 ## Próximos fixtures de alto valor
 
@@ -42,7 +51,7 @@ Los dos SAVE2 separan datos semánticos de nonce/timestamp/clave de guardado. Lo
 
 ## Vías oficiales útiles
 
-WinProLadder permite importar/exportar cuatro clases de contenido: comentarios (.txt), tablas (.tab), ladder (.ldr) y páginas de estado (.spf). Esos formatos serán usados como oráculo semántico.
+WinProLadder permite importar/exportar comentarios (.txt), tablas (.tab), ladder (.ldr) y páginas de estado (.spf). Esos formatos serán usados como oráculo semántico.
 
 UperLogic también puede importar proyectos WinProLadder .pdw. Lo usaremos como segundo parser independiente para comprobar ladder, tablas y configuración de E/S.
 
