@@ -3,11 +3,11 @@ name: Test mView VXF writer
 on:
   push:
     paths:
-      - "mView-Tools/vxf-editor/**"
+      - "Coolmay/mView-Tools/vxf-editor/**"
       - ".github/workflows/test-mview-vxf.yml"
   pull_request:
     paths:
-      - "mView-Tools/vxf-editor/**"
+      - "Coolmay/mView-Tools/vxf-editor/**"
       - ".github/workflows/test-mview-vxf.yml"
   workflow_dispatch:
 
@@ -25,4 +25,4 @@ jobs:
           python-version: "3.13"
 
       - name: Run VXF regression tests
-        run: python -m unittest mView-Tools/vxf-editor/test_vxf.py
+        run: python -m unittest Coolmay/mView-Tools/vxf-editor/test_vxf.py
