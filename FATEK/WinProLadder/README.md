@@ -1,62 +1,88 @@
 # FATEK WinProLadder Tools
 
-Ingeniería inversa reproducible de proyectos FATEK WinProLadder (.pdw) y sus formatos de intercambio.
+Ingeniería inversa reproducible de proyectos FATEK WinProLadder (.pdw) y formatos de intercambio.
 
 ## Estado
 
-**Fase 1 — reconocimiento estructural y recuperación experimental / sin escritura de PDW.**
+**Fase 1 avanzada — lectura, recuperación y decodificación mínima comprobada. Sin writer PDW todavía.**
 
-Confirmado sobre el par mínimo VACIO.pdw vs X0-Y0.pdw:
+El corpus controlado ya permitió demostrar:
 
-- ambos tienen 98.871 bytes;
-- firma: Fatek WinProladder, File Format 1;
-- aparecen FB-PLC, WinProladder, FBs-24MC, Project0, Main_unit1 y Sub_unit1;
-- los primeros 290 bytes son idénticos;
-- el último byte distinto está en 0x10251; desde 0x10252 al EOF ambos fixtures son idénticos;
-- desde 0x120 existe una periodicidad estructural dominante de 1.280 bytes;
-- al dividir por 1.280 bytes aparece en ambos el patrón A + 31xB + C + 18xD + E(parcial);
-- en los registros repetidos, VACIO XOR X0-Y0 tiene período exacto de 256 bytes;
-- como 1.280 = 5 x 256, XOR entre registros alineados permite cancelar esa capa periódica;
-- el primer grupo mide exactamente 40.960 bytes = 20.480 words = 20K words;
-- suponiendo que los 31 registros repetidos representan memoria borrada 0xFF, la recuperación revela `FBS40003`, el marcador `55 AA` y 31 registros totalmente 0xFF;
-- el proyecto X0-Y0 agrega exactamente dos words candidatos de programa: `0x0040` y `0x00C1`.
+- región de programa candidata de 40.960 bytes = 20.480 words = 20K words;
+- recuperación determinística usando registros borrados 0xFF;
+- re-guardados con ladder idéntico cambian sólo un word variable al inicio de la imagen recuperada;
+- X0 NO -> Y0 = `0x0040 0x00C1`;
+- X1 NO -> Y0 = `0x0140 0x00C1`;
+- X0 NO -> Y1 = `0x0040 0x01C1`;
+- X0 NC -> Y0 = `0x0050 0x00C1`;
+- X0 NC -> Y1 = `0x0050 0x01C1`;
+- el export LDR de NC X0 -> Y0 contiene literalmente `50 00 C1 00`;
+- el segundo gran grupo del PDW no cambia semánticamente con estos ladders una vez eliminados 8 bytes variables de guardado.
 
-La coincidencia con la capacidad documentada de programa FBs (20K words) y la estructura recuperada hacen de esta identificación una **hipótesis fuerte**, pero todavía no un contrato de escritura.
+## Herramientas
 
-## Herramienta actual
+### PDW
 
     python FATEK/WinProLadder/pdw_tools/analyze.py inspect proyecto.pdw
-    python FATEK/WinProLadder/pdw_tools/analyze.py compare VACIO.pdw X0-Y0.pdw
-    python FATEK/WinProLadder/pdw_tools/analyze.py recover-program X0-Y0.pdw
-    python FATEK/WinProLadder/pdw_tools/analyze.py recover-program X0-Y0.pdw --output program_candidate.bin
+    python FATEK/WinProLadder/pdw_tools/analyze.py compare A.pdw B.pdw
+    python FATEK/WinProLadder/pdw_tools/analyze.py recover-program proyecto.pdw
+    python FATEK/WinProLadder/pdw_tools/analyze.py recover-program proyecto.pdw --output program.bin
 
-El analizador nunca modifica el PDW fuente. `recover-program` sólo puede escribir una imagen derivada separada cuando se pasa `--output`.
+El resumen incluye un decoder mínimo para los sequential words ya comprobados.
 
-Ver:
+### LDR
+
+    python FATEK/WinProLadder/ldr_tools/analyze.py ladder.ldr
+
+El inspector muestra cabecera, payload, words little-endian y las instrucciones conocidas.
+
+## Documentación
 
 - `docs/FORMAT_PDW.md`
 - `docs/PROGRAM_MEMORY.md`
+- `docs/SEQUENTIAL_WORDS.md`
+- `docs/FORMAT_LDR.md`
+- `fixtures/MANIFEST.md`
 
-## Próximos fixtures de alto valor
+## Estrategia
 
-1. VACIO_SAVE2.pdw: abrir VACIO y guardar otra vez sin cambiar nada.
-2. X0-Y0_SAVE2.pdw: guardar otra vez sin cambiar la lógica.
-3. X1-Y0.pdw.
-4. X0-Y1.pdw.
-5. NC_X0-Y0.pdw.
-6. Exportación .ldr del proyecto X0-Y0.
-7. Exportaciones .tab, .spf y comentarios cuando agreguemos esos contenidos.
+Hay dos caminos paralelos:
 
-Los dos SAVE2 separan datos semánticos de nonce/timestamp/clave de guardado. Los cambios unitarios X/Y permiten mapear operandos e instrucciones.
+    Universal IR
+       |
+       +--> LDR  --> WinProLadder import       [camino corto para lógica]
+       |
+       +--> PDW  --> proyecto completo         [camino completo]
 
-## Vías oficiales útiles
+LDR parece mucho más directo y puede permitir generar ladder importable antes de terminar el empaquetador PDW.
 
-WinProLadder permite importar/exportar comentarios (.txt), tablas (.tab), ladder (.ldr) y páginas de estado (.spf). Esos formatos serán usados como oráculo semántico.
+PDW sigue siendo necesario para preservar proyecto completo: hardware, configuración, tablas, comunicaciones y demás recursos.
 
-UperLogic también puede importar proyectos WinProLadder .pdw. Lo usaremos como segundo parser independiente para comprobar ladder, tablas y configuración de E/S.
+## Próximos fixtures prioritarios
+
+Para ampliar el set de instrucciones:
+
+1. X2 -> Y0 y X0 -> Y2 para validar el patrón de índice más allá de 0/1.
+2. X0 AND X1 -> Y0.
+3. X0 OR X1 -> Y0.
+4. X0 -> SET Y0.
+5. X0 -> RST Y0.
+6. Timer simple.
+7. Counter simple.
+8. Dos networks independientes.
+9. Export LDR correspondiente a cada uno.
+
+Después:
+
+- comentarios;
+- tablas;
+- status pages;
+- módulos/I/O;
+- comunicaciones;
+- configuración de expansión.
 
 ## Meta
 
-PDW <-> FATEK IR <-> IR universal / PLCopen <-> otros fabricantes
+    PDW <-> FATEK IR <-> IR universal / PLCopen <-> otros fabricantes
 
-La escritura de PDW se habilitará únicamente cuando haya tests de round-trip y validación en WinProLadder.
+La escritura directa de PDW se habilitará únicamente con round-trip comprobado en WinProLadder.
