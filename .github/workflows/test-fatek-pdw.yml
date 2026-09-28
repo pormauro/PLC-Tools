@@ -1,13 +1,15 @@
-name: Test FATEK PDW tools
+name: Test FATEK WinProLadder tools
 
 on:
   push:
     paths:
       - "FATEK/WinProLadder/pdw_tools/**"
+      - "FATEK/WinProLadder/ldr_tools/**"
       - ".github/workflows/test-fatek-pdw.yml"
   pull_request:
     paths:
       - "FATEK/WinProLadder/pdw_tools/**"
+      - "FATEK/WinProLadder/ldr_tools/**"
       - ".github/workflows/test-fatek-pdw.yml"
   workflow_dispatch:
 
@@ -24,8 +26,12 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Compile PDW analyzer
-        run: python -m py_compile FATEK/WinProLadder/pdw_tools/analyze.py
+      - name: Compile analyzers
+        run: |
+          python -m py_compile FATEK/WinProLadder/pdw_tools/analyze.py
+          python -m py_compile FATEK/WinProLadder/ldr_tools/analyze.py
 
       - name: Show CLI help
-        run: python FATEK/WinProLadder/pdw_tools/analyze.py --help
+        run: |
+          python FATEK/WinProLadder/pdw_tools/analyze.py --help
+          python FATEK/WinProLadder/ldr_tools/analyze.py --help
