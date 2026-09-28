@@ -31,6 +31,9 @@ jobs:
           python -m py_compile FATEK/WinProLadder/pdw_tools/analyze.py
           python -m py_compile FATEK/WinProLadder/ldr_tools/analyze.py
 
+      - name: Run PDW writer regression tests
+        run: python -m unittest FATEK/WinProLadder/pdw_tools/test_minimal_writer.py
+
       - name: Show CLI help
         run: |
           python FATEK/WinProLadder/pdw_tools/analyze.py --help
