@@ -4,88 +4,59 @@ Estado: **evidencia empírica, 2026-09-28**.
 
 Este documento separa deliberadamente **CONFIRMADO**, **HIPÓTESIS FUERTE** e **HIPÓTESIS ABIERTA**.
 
-## Fixtures iniciales
+## Corpus controlado
 
-| Fixture | Tamaño | SHA-256 |
-|---|---:|---|
-| VACIO.pdw | 98.871 | 72054bbf92dd88c92de0ba79c45cb2fef255bb9675ef2ed338e08b255ee1ddfd |
-| X0-Y0.pdw | 98.871 | ed415db334e916eeec556f6da5df4eecb438ab304bcbe2677be2b1fac9446cb9 |
+Ver `../fixtures/MANIFEST.md`.
 
-La única diferencia semántica intencional conocida es un contacto X0 conectado directamente a una bobina Y0 en el segundo proyecto.
+El corpus ya incluye:
+
+- proyecto vacío y re-guardado sin cambios;
+- X0 NO -> Y0 y re-guardado sin cambios;
+- X1 NO -> Y0;
+- X0 NO -> Y1;
+- X0 NC -> Y0;
+- X0 NC -> Y1;
+- export LDR de NC X0 -> Y0.
+
+Todos los PDW del corpus tienen 98.871 bytes.
 
 ## Cabecera — CONFIRMADO
 
-- 0x0000: ASCII "Fatek WinProladder, File Format 1".
-- 0x0080: "FB-PLC".
-- 0x0090: "WinProladder".
-- 0x00A0: "FBs-24MC".
-- 0x010C: "Project0".
-- 0x0114: "FBs-24MC".
-- 0x0000..0x0121 es idéntico entre ambos; primera diferencia en 0x0122.
-- Main_unit1 comienza en 0x10232.
-- Sub_unit1 comienza en 0x10248.
-- Último byte distinto: 0x10251; 0x10252..EOF coincide byte a byte.
+- 0x0000: ASCII `Fatek WinProladder, File Format 1`.
+- 0x0080: `FB-PLC`.
+- 0x0090: `WinProladder`.
+- 0x00A0: `FBs-24MC`.
+- 0x010C: `Project0`.
+- 0x0114: `FBs-24MC`.
+- la región transformada comienza alrededor de 0x0122;
+- `Main_unit1` aparece cerca de 0x10232;
+- `Sub_unit1` aparece cerca de 0x10248.
 
-Observación: el archivo almacena FBs-24MC aunque la CPU física/configurada por el usuario sea FBs-24MCT. No inferir todavía que el sufijo de tipo de salida se pierda globalmente; puede estar codificado en otro campo.
+Observación: los archivos muestran `FBs-24MC` aunque el equipo usado por el usuario sea FBs-24MCT. No se concluye todavía dónde se conserva el subtipo exacto de salida.
 
-## Área de registros — CONFIRMADO
+## Registros de 1.280 bytes — CONFIRMADO
 
-Tomando 0x120 como origen experimental, la similitud entre bytes separados por 1.280 posiciones alcanza aproximadamente 97,5 %. Al partir el rango observado en registros de 1.280 bytes aparecen estas fronteras:
+Tomando 0x120 como origen experimental aparece el patrón:
 
-- 0x0120: registro A.
-- 0x0620: inicio de registros B repetidos.
-- 0xA120: registro C.
-- 0xA620: inicio de registros D repetidos.
-- 0x10020: registro E parcial.
+    A + 31xB + C + 18xD + E(parcial)
 
-Patrón por hash dentro de cada archivo:
+con registros de 1.280 bytes.
 
-    A BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB C DDDDDDDDDDDDDDDDDD E
+Dentro de cada archivo los B son idénticos entre sí y los D son idénticos entre sí.
 
-Conteos: A=1, B=31, C=1, D=18, E=1 parcial.
+## Transformación periódica — CONFIRMADO
 
-## Capa periódica de 256 bytes — CONFIRMADO
+Entre fixtures, el XOR de registros repetidos B es periódico cada 256 bytes durante 1.280 bytes completos.
 
-Para los registros B repetidos:
+Como:
 
-    VACIO_record_B XOR X0Y0_record_B
+    1280 = 5 * 256
 
-es exactamente periódico cada **256 bytes** durante los 1.280 bytes completos: el mismo bloque de 256 bytes se repite cinco veces.
+los registros alineados permiten cancelar la transformación sin conocer inicialmente su algoritmo absoluto.
 
-En los registros D se observa la misma secuencia de 256 bytes con un desplazamiento cíclico de 4 bytes.
+La evidencia es compatible con una capa XOR/keystream periódica en estas regiones.
 
-La resta modular byte a byte NO presenta esa propiedad exacta; la propiedad es específicamente compatible con XOR.
-
-## Cancelación de transformación — CONFIRMADO
-
-Como 1.280 es múltiplo de 256, dos registros alineados del mismo archivo comienzan en la misma fase de la transformación periódica:
-
-    N(record_active, record_reference) = record_active XOR record_reference
-
-Al calcular:
-
-    N(VACIO.A, VACIO.B) XOR N(X0Y0.A, X0Y0.B)
-
-quedan sólo **15 bytes no nulos** en un registro de 1.280 bytes:
-
-| Offset relativo | XOR |
-|---:|---|
-| 0x0000..0x0001 | 11 63 |
-| 0x00CA..0x00CD | 08 FF FF FE |
-| 0x0103 | 01 |
-| 0x0108 | 02 |
-| 0x010A | 02 |
-| 0x010E | 04 |
-| 0x0110 | 04 |
-| 0x0202..0x0205 | BF FF 3E FF |
-
-Para el segundo grupo:
-
-    N(VACIO.C, VACIO.D) XOR N(X0Y0.C, X0Y0.D)
-
-quedan sólo 6 bytes no nulos al comienzo del registro.
-
-## Primer grupo = candidato de memoria de programa — HIPÓTESIS FUERTE
+## Primer grupo = imagen de programa de 20K words — HIPÓTESIS FUERTE
 
 El primer grupo contiene exactamente:
 
@@ -93,86 +64,140 @@ El primer grupo contiene exactamente:
     40960 / 2 = 20480 words
     20480 words = 20K words
 
-La capacidad publicada para el programa de los PLC FBs es 20K words.
+Esto coincide exactamente con la capacidad de programa publicada para FBs.
 
-Si se supone que un registro B repetido representa memoria borrada a 0xFF y se usa para derivar la transformación XOR, la imagen recuperada contiene:
+Usando un registro B repetido como representación de memoria borrada a 0xFF, la recuperación produce:
 
-- `FBS40003` en 0x0002;
-- `55 AA` en 0x01FE;
-- 31 registros posteriores completamente 0xFF.
+- `FBS40003` en la cabecera interna;
+- marcador `55 AA` en 0x01FE;
+- 31 registros posteriores exactamente 0xFF;
+- código ladder coherente desde el word 257.
 
-Eso hace muy improbable que la recuperación coherente sea accidental.
+## Re-guardados — CONFIRMADO
 
-En VACIO, desde word 257 el candidato queda borrado. En X0-Y0 aparecen:
+### VACIO
 
-| Word | Offset relativo | Valor little-endian |
-|---:|---:|---:|
-| 257 | 0x0202 | 0x0040 |
-| 258 | 0x0204 | 0x00C1 |
+`VACIO.pdw` y `VACIO-2.pdw` tienen miles de bytes raw distintos por la transformación de guardado.
 
-La lógica conocida equivale a dos mnemónicos, `ORG X0` y `OUT Y0`. Por ahora sólo se afirma:
+Después de recuperar la imagen de 20K words:
 
-    {0x0040, 0x00C1} <-> {ORG X0, OUT Y0}
+- sólo cambian los bytes relativos 0x0000..0x0001;
+- desde 0x0002 hasta el final de los 40.960 bytes la imagen recuperada es idéntica.
 
-Todavía NO se asigna cuál word corresponde a cuál instrucción hasta comparar X1/Y1/NOT.
+### X0 -> Y0
 
-Ver `PROGRAM_MEMORY.md`.
+`X0-Y0.pdw` y `X0-Y0-2.pdw` muestran exactamente el mismo comportamiento:
 
-## Normalización entre claves de guardado — CONFIRMADO EN LOS DOS FIXTURES
+- sólo cambian los bytes recuperados 0x0000..0x0001;
+- el código y toda la imagen restante son idénticos.
 
-Los registros repetidos permiten calcular el delta de transformación entre ambos
-archivos sin conocer la clave absoluta. Al reexpresar X0-Y0 bajo la transformación
-del fixture VACIO:
+Consecuencia: esos primeros 2 bytes son **estado variable de guardado o transformación**, no un fingerprint semántico estable del ladder.
 
-- el diff bruto de 65.282 bytes cae a **25 bytes** en todo el archivo;
-- 15 bytes pertenecen al primer bloque activo;
-- 6 bytes pertenecen al comienzo del segundo grupo;
-- 4 bytes adicionales aparecen cerca del final del área transformada/metadatos.
+El analizador calcula por eso un `semantic_sha256_ignoring_first_word`.
 
-Esto demuestra que la enorme mayoría del diff bruto corresponde a la capa de
-transformación y no a diferencias semánticas del proyecto.
+## Sequential words mínimos — CONFIRMADO
 
-Implicación práctica: es viable construir un comparador semántico y, más adelante,
-un empaquetador que preserve la transformación de un template válido.
+Desde el word 257:
 
-## Segundo grupo — EVIDENCIA NUEVA / SEMÁNTICA ABIERTA
+| Ladder | Word 257 | Word 258 |
+|---|---:|---:|
+| X0 NO -> Y0 | 0x0040 | 0x00C1 |
+| X1 NO -> Y0 | 0x0140 | 0x00C1 |
+| X0 NO -> Y1 | 0x0040 | 0x01C1 |
+| X0 NC -> Y0 | 0x0050 | 0x00C1 |
+| X0 NC -> Y1 | 0x0050 | 0x01C1 |
 
-Usando un registro D repetido como referencia 0xFF, el final del segundo grupo
-recupera una secuencia ASCII repetida:
+Para los casos observados:
+
+    word = (device_index << 8) | opcode
+
+Mapa ya demostrado:
+
+- low opcode 0x40: `ORG Xn`, confirmado X0/X1;
+- low opcode 0x50: `ORG NOT Xn`, confirmado X0;
+- low opcode 0xC1: `OUT Yn`, confirmado Y0/Y1.
+
+Ver `SEQUENTIAL_WORDS.md`.
+
+## Confirmación independiente con LDR — CONFIRMADO
+
+`NC-X0-Y0.ldr` no usa la transformación del PDW.
+
+Su payload contiene literalmente:
+
+    50 00 C1 00
+
+que, little-endian, es:
+
+    0x0050
+    0x00C1
+
+Es exactamente el mismo par recuperado desde `NC-X0-Y0.pdw`.
+
+Esto confirma tanto los words como su orden.
+
+## Segundo grupo — CONFIRMADO COMO NO SEMÁNTICO PARA ESTE CORPUS
+
+Usando un registro D repetido como referencia de borrado 0xFF, el segundo grupo recupera al final una secuencia:
 
     FATEKFATEKFATEK...
 
-El patrón aparece en ambos fixtures. Esto refuerza que la cancelación está
-revelando estructura real. Todavía no se asigna una función al segundo grupo:
-puede contener tablas, índices, metadatos, integridad u otras áreas del proyecto.
+La comparación de **todos** los fixtures actuales muestra:
+
+- al ignorar los primeros 6 bytes recuperados;
+- y los últimos 2 bytes recuperados;
+
+el segundo grupo es byte-a-byte idéntico entre:
+
+- VACIO;
+- VACIO re-guardado;
+- X0/Y0 y re-guardado;
+- X1/Y0;
+- X0/Y1;
+- NC X0/Y0;
+- NC X0/Y1.
+
+Por lo tanto, en este corpus el segundo grupo **no transporta la semántica del ladder**.
+
+Los 8 bytes variables son candidatos a estado de guardado, integridad o estado de transformación. No se les asigna todavía significado.
+
+## Consecuencia para un futuro writer
+
+La arquitectura probable queda mucho más simple:
+
+    PDW template
+       |
+       +-- cabecera/configuración de proyecto
+       |
+       +-- imagen programa 20K words  <-- ladder
+       |
+       +-- otras áreas/configuración
+       |
+       +-- estado de guardado/transformación
+
+Todavía NO se escribe PDW porque falta demostrar:
+
+1. cómo regenerar o preservar correctamente los campos variables;
+2. si existe validación de integridad al abrir/guardar;
+3. comportamiento con programas más largos;
+4. múltiples networks;
+5. instrucciones de longitud variable;
+6. tablas, I/O, comunicaciones y demás configuración;
+7. round-trip real en WinProLadder.
 
 ## HIPÓTESIS ABIERTAS
 
-1. La transformación completa del PDW es XOR con keystream/estado de período 256 o una transformación algebraicamente equivalente en estas regiones.
-2. El segundo grupo C + 18xD + E corresponde a otra memoria/tabla, aún sin asignación semántica.
-3. Los cambios en 0x0000..0x0001 del bloque recuperado pueden ser checksum/CRC/hash.
-4. Los campos alrededor de 0x00CA y 0x0100 parecen longitudes/contadores/índices, pero faltan fixtures para etiquetarlos.
-5. La relación exacta entre el candidato de 20K words y el layout descargado al PLC todavía debe validarse contra transferencia/round-trip.
-
-## Experimentos que falsan/confirman las hipótesis
-
-- Guardar el mismo proyecto dos veces: revela nonce/timestamp/clave variable por guardado.
-- X0-Y0 vs X1-Y0: aísla codificación de entrada.
-- X0-Y0 vs X0-Y1: aísla codificación de salida.
-- contacto NO vs NC: aísla opcode/tipo de contacto.
-- exportación .ldr: aporta representación semántica conocida del mismo rung.
-- segundo network: prueba crecimiento y delimitación del stream de programa.
-- upload/download del mismo programa: contrasta PDW recuperado con imagen real del PLC.
-
-## Fuentes públicas útiles
-
-- FATEK WinProLadder: https://www.fatek.com/en/download.php?act=list&cid=141
-- Manual WinProLadder: documenta exportación/importación .txt, .tab, .ldr y .spf.
-- FATEK FBs: especifica capacidad de programa de 20K Words.
-- FP-08: documenta edición de mnemónicos directamente en el área de programa.
-- UperLogic: puede importar proyectos WinProLadder .pdw y convertirlos al entorno nuevo.
-- ZDI-22-028 / 030 / 032 / 033: confirman rutinas específicas de parsing PDW en WinProLadder.
+1. Algoritmo exacto que genera el keystream/transformación.
+2. Función de los 2 bytes variables iniciales de la imagen recuperada.
+3. Función de los 6+2 bytes variables del segundo grupo.
+4. Semántica completa del segundo grupo y de las áreas posteriores.
+5. Estructura exacta de contadores, longitudes y checks internos.
+6. Cómo se serializan instrucciones más complejas y operands fuera del rango mínimo observado.
 
 ## Regla de escritura
 
-Hasta cerrar formato, longitudes, validaciones y checksums, **no se genera ni modifica un PDW de producción**. Toda futura escritura deberá hacerse sobre copia, abrir correctamente en WinProLadder y pasar validación semántica/round-trip.
+Hasta cerrar formato, validaciones y round-trip:
+
+**no se genera ni modifica un PDW para uso real**.
+
+Las futuras pruebas de escritura se harán únicamente sobre copias derivadas y deben abrir correctamente en WinProLadder antes de considerarse válidas.
