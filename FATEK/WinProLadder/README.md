@@ -27,8 +27,12 @@ El corpus controlado ya permitió demostrar:
     python FATEK/WinProLadder/pdw_tools/analyze.py compare A.pdw B.pdw
     python FATEK/WinProLadder/pdw_tools/analyze.py recover-program proyecto.pdw
     python FATEK/WinProLadder/pdw_tools/analyze.py recover-program proyecto.pdw --output program.bin
+    python FATEK/WinProLadder/pdw_tools/analyze.py write-minimal template.pdw salida.pdw --x 1 --y 0
+    python FATEK/WinProLadder/pdw_tools/analyze.py write-minimal template.pdw salida.pdw --x 0 --y 0 --nc
 
 El resumen incluye un decoder mínimo para los sequential words ya comprobados.
+
+El writer mínimo está validado externamente en WinProLadder para una mutación X0->Y0 a X1->Y0: apertura PASS + Syntax Check PASS. Rechaza templates complejos y no sobrescribe el original.
 
 ### LDR
 
@@ -42,6 +46,7 @@ El inspector muestra cabecera, payload, words little-endian y las instrucciones 
 - `docs/PROGRAM_MEMORY.md`
 - `docs/SEQUENTIAL_WORDS.md`
 - `docs/FORMAT_LDR.md`
+- `docs/MINIMAL_WRITER_VALIDATION.md`
 - `fixtures/MANIFEST.md`
 
 ## Estrategia
