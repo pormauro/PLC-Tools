@@ -32,6 +32,15 @@ PROGRAM_BYTES = PROGRAM_RECORD_COUNT * RECORD_SIZE
 PROGRAM_WORDS = PROGRAM_BYTES // 2
 PROGRAM_REFERENCE_RECORD_INDEX = 1
 ERASED_BYTE = 0xFF
+PROGRAM_CODE_START_WORD = 257
+
+# Low-byte opcodes established by controlled fixtures.
+# Device index is stored in the high byte for the observed X0/X1 and Y0/Y1 cases.
+KNOWN_LOW_OPCODES = {
+    0x40: ("ORG", "X", "confirmed for X0/X1"),
+    0x50: ("ORG NOT", "X", "confirmed for X0; index layout inferred"),
+    0xC1: ("OUT", "Y", "confirmed for Y0/Y1"),
+}
 
 PERIOD_CANDIDATES = (
     32, 64, 128, 144, 160, 192, 256, 320, 384, 512, 640, 768,
@@ -224,6 +233,33 @@ def words_le(buf: bytes) -> list[int]:
     return list(struct.unpack("<" + "H" * (usable // 2), buf[:usable]))
 
 
+def decode_sequential_word(word: int) -> dict | None:
+    opcode = word & 0xFF
+    index = (word >> 8) & 0xFF
+    known = KNOWN_LOW_OPCODES.get(opcode)
+    if known is None:
+        return None
+    mnemonic, family, evidence = known
+    return {
+        "word": word,
+        "hex_word": f"0x{word:04X}",
+        "opcode_low": opcode,
+        "device_index": index,
+        "mnemonic": mnemonic,
+        "operand": f"{family}{index}",
+        "text": f"{mnemonic} {family}{index}",
+        "evidence": evidence,
+    }
+
+
+def semantic_program_sha256(recovered: bytes) -> str:
+    """Fingerprint program content while ignoring the 2-byte save-variant field."""
+    normalized = bytearray(recovered)
+    if len(normalized) >= 2:
+        normalized[0:2] = b"\x00\x00"
+    return hashlib.sha256(normalized).hexdigest()
+
+
 def summarize_program_candidate(data: bytes, max_words: int = 64) -> dict:
     recovered = recover_program_candidate(data)
     words = words_le(recovered)
@@ -252,6 +288,19 @@ def summarize_program_candidate(data: bytes, max_words: int = 64) -> dict:
         == bytes([ERASED_BYTE]) * RECORD_SIZE
         for i in range(1, PROGRAM_RECORD_COUNT)
     )
+    decoded = []
+    for index in range(PROGRAM_CODE_START_WORD, min(len(words), PROGRAM_CODE_START_WORD + max_words)):
+        word = words[index]
+        if word == 0xFFFF:
+            break
+        decoded.append({
+            "word_index": index,
+            "byte_offset": index * 2,
+            "hex_offset": f"0x{index * 2:X}",
+            "decoded": decode_sequential_word(word),
+            "raw_hex": f"0x{word:04X}",
+        })
+
     return {
         "status": "experimental_strong_hypothesis",
         "assumption": (
@@ -271,6 +320,10 @@ def summarize_program_candidate(data: bytes, max_words: int = 64) -> dict:
         "marker_55aa_offsets": marker_offsets,
         "non_erased_words_from_word_256": tail_words,
         "recovered_sha256": hashlib.sha256(recovered).hexdigest(),
+        "semantic_sha256_ignoring_first_word": semantic_program_sha256(recovered),
+        "save_variant_word0": f"0x{words[0]:04X}" if words else None,
+        "program_code_start_word": PROGRAM_CODE_START_WORD,
+        "minimal_sequential_decode": decoded,
     }
 
 
