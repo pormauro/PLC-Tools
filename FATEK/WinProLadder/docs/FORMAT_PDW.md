@@ -118,6 +118,34 @@ Todavía NO se asigna cuál word corresponde a cuál instrucción hasta comparar
 
 Ver `PROGRAM_MEMORY.md`.
 
+## Normalización entre claves de guardado — CONFIRMADO EN LOS DOS FIXTURES
+
+Los registros repetidos permiten calcular el delta de transformación entre ambos
+archivos sin conocer la clave absoluta. Al reexpresar X0-Y0 bajo la transformación
+del fixture VACIO:
+
+- el diff bruto de 65.282 bytes cae a **25 bytes** en todo el archivo;
+- 15 bytes pertenecen al primer bloque activo;
+- 6 bytes pertenecen al comienzo del segundo grupo;
+- 4 bytes adicionales aparecen cerca del final del área transformada/metadatos.
+
+Esto demuestra que la enorme mayoría del diff bruto corresponde a la capa de
+transformación y no a diferencias semánticas del proyecto.
+
+Implicación práctica: es viable construir un comparador semántico y, más adelante,
+un empaquetador que preserve la transformación de un template válido.
+
+## Segundo grupo — EVIDENCIA NUEVA / SEMÁNTICA ABIERTA
+
+Usando un registro D repetido como referencia 0xFF, el final del segundo grupo
+recupera una secuencia ASCII repetida:
+
+    FATEKFATEKFATEK...
+
+El patrón aparece en ambos fixtures. Esto refuerza que la cancelación está
+revelando estructura real. Todavía no se asigna una función al segundo grupo:
+puede contener tablas, índices, metadatos, integridad u otras áreas del proyecto.
+
 ## HIPÓTESIS ABIERTAS
 
 1. La transformación completa del PDW es XOR con keystream/estado de período 256 o una transformación algebraicamente equivalente en estas regiones.
