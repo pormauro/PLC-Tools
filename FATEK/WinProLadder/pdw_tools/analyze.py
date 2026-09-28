@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Read-only structural analysis for FATEK WinProLadder .pdw projects."""
+"""Read-only structural analysis for FATEK WinProLadder .pdw projects.
+
+The tool never mutates a source PDW. Experimental recovery commands may write
+derived binary data to a separate output path when explicitly requested.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +13,7 @@ import hashlib
 import json
 import math
 import re
+import struct
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -19,6 +24,15 @@ RECORD_SIZE = 1280
 RECORD_SCAN_END = 0x10228
 HEADER_STABLE_END = 290
 KNOWN_STABLE_TAIL = 66130
+
+# Strong empirical candidate for the FBs program-memory image:
+# 32 records * 1280 bytes = 40960 bytes = 20480 16-bit words = 20K words.
+PROGRAM_RECORD_COUNT = 32
+PROGRAM_BYTES = PROGRAM_RECORD_COUNT * RECORD_SIZE
+PROGRAM_WORDS = PROGRAM_BYTES // 2
+PROGRAM_REFERENCE_RECORD_INDEX = 1
+ERASED_BYTE = 0xFF
+
 PERIOD_CANDIDATES = (
     32, 64, 128, 144, 160, 192, 256, 320, 384, 512, 640, 768,
     1024, 1280, 1536, 2048, 2560, 3840, 4096,
@@ -97,7 +111,10 @@ def split_records(
     record_size: int = RECORD_SIZE,
 ) -> list[bytes]:
     end = min(end, len(buf))
-    return [buf[i:min(i + record_size, end)] for i in range(start, end, record_size)]
+    return [
+        buf[i:min(i + record_size, end)]
+        for i in range(start, end, record_size)
+    ]
 
 
 def summarize_repeated_chunks(buf: bytes) -> dict:
@@ -128,7 +145,9 @@ def contiguous_runs(indices: Iterable[int]) -> list[dict]:
     start = prev = values[0]
     for value in values[1:]:
         if value != prev + 1:
-            out.append({"start": start, "end": prev, "length": prev - start + 1})
+            out.append(
+                {"start": start, "end": prev, "length": prev - start + 1}
+            )
             start = value
         prev = value
     out.append({"start": start, "end": prev, "length": prev - start + 1})
@@ -153,7 +172,7 @@ def cancel_periodic_transform(
     active_record_index: int,
     reference_record_index: int,
 ) -> bytes:
-    """Empirically cancel a same-phase XOR layer using an aligned reference record."""
+    """Empirically cancel a same-phase XOR layer using an aligned reference."""
     records = split_records(data)
     try:
         active = records[active_record_index]
@@ -163,6 +182,96 @@ def cancel_periodic_transform(
     if len(active) != len(reference):
         raise ValueError("records must have equal size")
     return xor_bytes(active, reference)
+
+
+def derive_program_xor_key(
+    data: bytes,
+    reference_record_index: int = PROGRAM_REFERENCE_RECORD_INDEX,
+    erased_byte: int = ERASED_BYTE,
+) -> bytes:
+    """Derive the repeating transform from an assumed 0xFF erased record."""
+    if not 0 <= erased_byte <= 0xFF:
+        raise ValueError("erased_byte must be in range 0..255")
+    records = split_records(data)
+    if len(records) < PROGRAM_RECORD_COUNT:
+        raise ValueError("PDW is too short for the 32-record candidate program area")
+    reference = records[reference_record_index]
+    if len(reference) != RECORD_SIZE:
+        raise ValueError("reference record is incomplete")
+    return bytes(value ^ erased_byte for value in reference)
+
+
+def recover_program_candidate(data: bytes) -> bytes:
+    """Recover the 20K-word candidate program region under the 0xFF premise."""
+    records = split_records(data)
+    if len(records) < PROGRAM_RECORD_COUNT:
+        raise ValueError("PDW is too short for the candidate program area")
+    key = derive_program_xor_key(data)
+    recovered = bytearray()
+    for record in records[:PROGRAM_RECORD_COUNT]:
+        if len(record) != RECORD_SIZE:
+            raise ValueError("incomplete record in candidate program area")
+        recovered.extend(xor_bytes(record, key))
+    if len(recovered) != PROGRAM_BYTES:
+        raise AssertionError("candidate program recovery produced wrong size")
+    return bytes(recovered)
+
+
+def words_le(buf: bytes) -> list[int]:
+    usable = len(buf) - (len(buf) % 2)
+    if not usable:
+        return []
+    return list(struct.unpack("<" + "H" * (usable // 2), buf[:usable]))
+
+
+def summarize_program_candidate(data: bytes, max_words: int = 64) -> dict:
+    recovered = recover_program_candidate(data)
+    words = words_le(recovered)
+    strings = [
+        {"offset": off, "hex_offset": f"0x{off:X}", "text": text}
+        for off, text in ascii_strings(recovered)
+        if off < 0x400
+    ]
+    marker_offsets = [
+        i for i in range(len(recovered) - 1)
+        if recovered[i:i + 2] == b"\x55\xAA"
+    ]
+    tail_words = [
+        {
+            "word_index": index,
+            "byte_offset": index * 2,
+            "hex_offset": f"0x{index * 2:X}",
+            "value": value,
+            "hex_value": f"0x{value:04X}",
+        }
+        for index, value in enumerate(words[256:], start=256)
+        if value != 0xFFFF
+    ][:max_words]
+    blank_records_after_first = sum(
+        recovered[i * RECORD_SIZE:(i + 1) * RECORD_SIZE]
+        == bytes([ERASED_BYTE]) * RECORD_SIZE
+        for i in range(1, PROGRAM_RECORD_COUNT)
+    )
+    return {
+        "status": "experimental_strong_hypothesis",
+        "assumption": (
+            "record 1 represents erased program memory filled with 0xFF; "
+            "its ciphertext therefore reveals the repeating XOR transform"
+        ),
+        "source_offset": RECORD_START,
+        "source_hex_offset": f"0x{RECORD_START:X}",
+        "size_bytes": PROGRAM_BYTES,
+        "size_words_16bit": PROGRAM_WORDS,
+        "record_count": PROGRAM_RECORD_COUNT,
+        "record_size": RECORD_SIZE,
+        "reference_record_index": PROGRAM_REFERENCE_RECORD_INDEX,
+        "erased_byte": ERASED_BYTE,
+        "blank_records_after_first": blank_records_after_first,
+        "ascii_strings_below_0x400": strings,
+        "marker_55aa_offsets": marker_offsets,
+        "non_erased_words_from_word_256": tail_words,
+        "recovered_sha256": hashlib.sha256(recovered).hexdigest(),
+    }
 
 
 def inspect_file(path: Path) -> FileReport:
@@ -183,8 +292,12 @@ def inspect_file(path: Path) -> FileReport:
         header_ascii=meaningful,
         first_long_zero_run=first_zero_run(data),
         entropy_0_290=shannon_entropy(data[:split1]),
-        entropy_290_66130=shannon_entropy(data[split1:split2]) if split2 > split1 else None,
-        entropy_66130_eof=shannon_entropy(data[split2:]) if len(data) > split2 else None,
+        entropy_290_66130=(
+            shannon_entropy(data[split1:split2]) if split2 > split1 else None
+        ),
+        entropy_66130_eof=(
+            shannon_entropy(data[split2:]) if len(data) > split2 else None
+        ),
         candidate_periods=scan_candidate_periods(data),
         repeated_1280_structure=summarize_repeated_chunks(data),
     )
@@ -231,7 +344,8 @@ def compare_files(left: Path, right: Path) -> dict:
             i % 256 for i in equal if 290 <= i < 66130
         ).most_common(12),
         "record_xor_exact_period_256_indices": [
-            i for i, delta in enumerate(record_xor) if xor_period_is_exact(delta, 256)
+            i for i, delta in enumerate(record_xor)
+            if xor_period_is_exact(delta, 256)
         ],
         "normalized_record_0_delta": {
             "nonzero_bytes": sum(v != 0 for v in first_delta),
@@ -241,6 +355,8 @@ def compare_files(left: Path, right: Path) -> dict:
             "nonzero_bytes": sum(v != 0 for v in second_delta),
             "runs": nonzero_runs(second_delta),
         } if second_delta is not None else None,
+        "program_candidate_left": summarize_program_candidate(a),
+        "program_candidate_right": summarize_program_candidate(b),
     }
 
 
@@ -249,17 +365,42 @@ def main() -> int:
         description="Read-only structural analysis for FATEK WinProLadder PDW files"
     )
     sub = parser.add_subparsers(dest="command", required=True)
+
     p_inspect = sub.add_parser("inspect", help="inspect one PDW file")
     p_inspect.add_argument("file", type=Path)
+
     p_compare = sub.add_parser("compare", help="compare two PDW files")
     p_compare.add_argument("left", type=Path)
     p_compare.add_argument("right", type=Path)
-    args = parser.parse_args()
-    payload = (
-        asdict(inspect_file(args.file))
-        if args.command == "inspect"
-        else compare_files(args.left, args.right)
+
+    p_recover = sub.add_parser(
+        "recover-program",
+        help=(
+            "experimentally recover the 20K-word program candidate under the "
+            "documented 0xFF-erased-record assumption"
+        ),
     )
+    p_recover.add_argument("file", type=Path)
+    p_recover.add_argument(
+        "--output",
+        type=Path,
+        help="optional path for the derived 40960-byte candidate image",
+    )
+
+    args = parser.parse_args()
+
+    if args.command == "inspect":
+        payload = asdict(inspect_file(args.file))
+    elif args.command == "compare":
+        payload = compare_files(args.left, args.right)
+    else:
+        data = args.file.read_bytes()
+        recovered = recover_program_candidate(data)
+        if args.output is not None:
+            args.output.write_bytes(recovered)
+        payload = summarize_program_candidate(data)
+        payload["output"] = str(args.output) if args.output is not None else None
+
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
 
