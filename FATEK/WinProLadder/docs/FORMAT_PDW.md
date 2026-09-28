@@ -2,7 +2,7 @@
 
 Estado: **evidencia empírica, 2026-09-28**.
 
-Este documento separa deliberadamente **CONFIRMADO** de **HIPÓTESIS**.
+Este documento separa deliberadamente **CONFIRMADO**, **HIPÓTESIS FUERTE** e **HIPÓTESIS ABIERTA**.
 
 ## Fixtures iniciales
 
@@ -40,17 +40,15 @@ Tomando 0x120 como origen experimental, la similitud entre bytes separados por 1
 
 Patrón por hash dentro de cada archivo:
 
-A BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB C DDDDDDDDDDDDDDDDDD E
+    A BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB C DDDDDDDDDDDDDDDDDD E
 
 Conteos: A=1, B=31, C=1, D=18, E=1 parcial.
-
-No se asigna todavía significado semántico a A/B/C/D/E.
 
 ## Capa periódica de 256 bytes — CONFIRMADO
 
 Para los registros B repetidos:
 
-VACIO_record_B XOR X0Y0_record_B
+    VACIO_record_B XOR X0Y0_record_B
 
 es exactamente periódico cada **256 bytes** durante los 1.280 bytes completos: el mismo bloque de 256 bytes se repite cinco veces.
 
@@ -60,13 +58,13 @@ La resta modular byte a byte NO presenta esa propiedad exacta; la propiedad es e
 
 ## Cancelación de transformación — CONFIRMADO
 
-Como 1.280 es múltiplo de 256, dos registros alineados del mismo archivo comienzan en la misma fase de la transformación periódica. Definimos la normalización empírica:
+Como 1.280 es múltiplo de 256, dos registros alineados del mismo archivo comienzan en la misma fase de la transformación periódica:
 
-N(record_active, record_reference) = record_active XOR record_reference
+    N(record_active, record_reference) = record_active XOR record_reference
 
 Al calcular:
 
-N(VACIO.A, VACIO.B) XOR N(X0Y0.A, X0Y0.B)
+    N(VACIO.A, VACIO.B) XOR N(X0Y0.A, X0Y0.B)
 
 quedan sólo **15 bytes no nulos** en un registro de 1.280 bytes:
 
@@ -83,36 +81,70 @@ quedan sólo **15 bytes no nulos** en un registro de 1.280 bytes:
 
 Para el segundo grupo:
 
-N(VACIO.C, VACIO.D) XOR N(X0Y0.C, X0Y0.D)
+    N(VACIO.C, VACIO.D) XOR N(X0Y0.C, X0Y0.D)
 
 quedan sólo 6 bytes no nulos al comienzo del registro.
 
-Esto transforma un diff bruto de 65.282 bytes en un problema localizable y comprobable.
+## Primer grupo = candidato de memoria de programa — HIPÓTESIS FUERTE
 
-## HIPÓTESIS actuales
+El primer grupo contiene exactamente:
 
-1. Existe una capa de ofuscación/cifrado basada en XOR con estado o keystream de período 256, o una transformación algebraicamente equivalente para estas regiones.
-2. Los registros repetidos B/D representan slots vacíos o plantillas sin uso.
-3. A y C son registros activos/cabeceras de dos colecciones distintas.
-4. Los bytes relativos alrededor de 0x00CA, 0x0103..0x0110 y 0x0202..0x0205 son candidatos a describir el rung X0 -> Y0, pero NO deben etiquetarse todavía como opcode/operando hasta comparar X1, Y1, contacto NC y .ldr.
-5. Los primeros bytes cambiantes de los registros normalizados pueden ser longitud/checksum/contador y no lógica ladder.
+    32 * 1280 = 40960 bytes
+    40960 / 2 = 20480 words
+    20480 words = 20K words
+
+La capacidad publicada para el programa de los PLC FBs es 20K words.
+
+Si se supone que un registro B repetido representa memoria borrada a 0xFF y se usa para derivar la transformación XOR, la imagen recuperada contiene:
+
+- `FBS40003` en 0x0002;
+- `55 AA` en 0x01FE;
+- 31 registros posteriores completamente 0xFF.
+
+Eso hace muy improbable que la recuperación coherente sea accidental.
+
+En VACIO, desde word 257 el candidato queda borrado. En X0-Y0 aparecen:
+
+| Word | Offset relativo | Valor little-endian |
+|---:|---:|---:|
+| 257 | 0x0202 | 0x0040 |
+| 258 | 0x0204 | 0x00C1 |
+
+La lógica conocida equivale a dos mnemónicos, `ORG X0` y `OUT Y0`. Por ahora sólo se afirma:
+
+    {0x0040, 0x00C1} <-> {ORG X0, OUT Y0}
+
+Todavía NO se asigna cuál word corresponde a cuál instrucción hasta comparar X1/Y1/NOT.
+
+Ver `PROGRAM_MEMORY.md`.
+
+## HIPÓTESIS ABIERTAS
+
+1. La transformación completa del PDW es XOR con keystream/estado de período 256 o una transformación algebraicamente equivalente en estas regiones.
+2. El segundo grupo C + 18xD + E corresponde a otra memoria/tabla, aún sin asignación semántica.
+3. Los cambios en 0x0000..0x0001 del bloque recuperado pueden ser checksum/CRC/hash.
+4. Los campos alrededor de 0x00CA y 0x0100 parecen longitudes/contadores/índices, pero faltan fixtures para etiquetarlos.
+5. La relación exacta entre el candidato de 20K words y el layout descargado al PLC todavía debe validarse contra transferencia/round-trip.
 
 ## Experimentos que falsan/confirman las hipótesis
 
-- Guardar el mismo proyecto dos veces: revela si existe nonce, timestamp o clave variable por guardado.
+- Guardar el mismo proyecto dos veces: revela nonce/timestamp/clave variable por guardado.
 - X0-Y0 vs X1-Y0: aísla codificación de entrada.
 - X0-Y0 vs X0-Y1: aísla codificación de salida.
 - contacto NO vs NC: aísla opcode/tipo de contacto.
-- exportación .ldr: aporta una representación semántica conocida del mismo rung.
-- proyecto con segundo network: prueba si el área A contiene una lista/stream de networks.
+- exportación .ldr: aporta representación semántica conocida del mismo rung.
+- segundo network: prueba crecimiento y delimitación del stream de programa.
+- upload/download del mismo programa: contrasta PDW recuperado con imagen real del PLC.
 
 ## Fuentes públicas útiles
 
 - FATEK WinProLadder: https://www.fatek.com/en/download.php?act=list&cid=141
 - Manual WinProLadder: documenta exportación/importación .txt, .tab, .ldr y .spf.
+- FATEK FBs: especifica capacidad de programa de 20K Words.
+- FP-08: documenta edición de mnemónicos directamente en el área de programa.
 - UperLogic: puede importar proyectos WinProLadder .pdw y convertirlos al entorno nuevo.
-- ZDI-22-028 / 030 / 032 / 033: confirman la existencia de rutinas específicas de parsing PDW en WinProLadder.
+- ZDI-22-028 / 030 / 032 / 033: confirman rutinas específicas de parsing PDW en WinProLadder.
 
 ## Regla de escritura
 
-Hasta cerrar formato, longitudes y validaciones, **no se genera ni modifica un PDW de producción**. Toda futura escritura deberá hacerse sobre copia, abrir correctamente en WinProLadder y pasar validación semántica/round-trip.
+Hasta cerrar formato, longitudes, validaciones y checksums, **no se genera ni modifica un PDW de producción**. Toda futura escritura deberá hacerse sobre copia, abrir correctamente en WinProLadder y pasar validación semántica/round-trip.
