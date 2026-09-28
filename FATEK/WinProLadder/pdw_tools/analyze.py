@@ -260,6 +260,125 @@ def semantic_program_sha256(recovered: bytes) -> str:
     return hashlib.sha256(normalized).hexdigest()
 
 
+def minimal_rung_words(x_index: int, y_index: int, nc: bool = False) -> tuple[int, int, int]:
+    """Encode the confirmed minimal ORG/ORG NOT + OUT family."""
+    if not 0 <= x_index <= 0xFF:
+        raise ValueError("x_index must be in range 0..255")
+    if not 0 <= y_index <= 0xFF:
+        raise ValueError("y_index must be in range 0..255")
+    contact = (x_index << 8) | (0x50 if nc else 0x40)
+    output = (y_index << 8) | 0xC1
+    checksum = (contact + output - 1) & 0xFFFF
+    return contact, output, checksum
+
+
+def validate_minimal_template(recovered: bytes) -> None:
+    """Refuse templates whose program area is more complex than our proven family."""
+    words = words_le(recovered)
+    if len(words) != PROGRAM_WORDS:
+        raise ValueError("unexpected recovered program size")
+    if recovered[0x1FE:0x200] != b"\x55\xAA":
+        raise ValueError("expected 55 AA program marker not found")
+    tail = words[PROGRAM_CODE_START_WORD:]
+    non_erased = [i for i, word in enumerate(tail) if word != 0xFFFF]
+    if not non_erased:
+        return
+    if non_erased != [0, 1]:
+        raise ValueError(
+            "template contains more than one proven 2-word minimal rung; refusing write"
+        )
+
+
+def patch_minimal_rung_plaintext(
+    record: bytearray,
+    x_index: int,
+    y_index: int,
+    nc: bool = False,
+) -> tuple[int, int, int]:
+    """Patch one recovered active record using fields proven by the controlled corpus."""
+    if len(record) != RECORD_SIZE:
+        raise ValueError("active record must be exactly 1280 bytes")
+    contact, output, checksum = minimal_rung_words(x_index, y_index, nc)
+
+    # Proven constant/control fields for the current 2-word rung family.
+    record[0xCA] = 0x2B
+    record[0xCB] = 0xFF
+    record[0xCC] = checksum & 0xFF
+    record[0xCD] = (checksum >> 8) & 0xFF
+    record[0x103] = 0x00
+    record[0x108] = 0x02
+    record[0x10A] = 0xFD
+    record[0x10E] = 0x06
+    record[0x110] = 0x06
+
+    record[0x202] = contact & 0xFF
+    record[0x203] = (contact >> 8) & 0xFF
+    record[0x204] = output & 0xFF
+    record[0x205] = (output >> 8) & 0xFF
+    return contact, output, checksum
+
+
+def write_minimal_rung(
+    template: Path,
+    output_path: Path,
+    x_index: int,
+    y_index: int,
+    nc: bool = False,
+    force: bool = False,
+    allow_unconfirmed_index: bool = False,
+) -> dict:
+    """Create a derived PDW using a validated empty/minimal template."""
+    if template.resolve() == output_path.resolve():
+        raise ValueError("output must be different from template")
+    if output_path.exists() and not force:
+        raise FileExistsError(f"output already exists: {output_path}")
+    if (x_index > 1 or y_index > 1) and not allow_unconfirmed_index:
+        raise ValueError(
+            "indices above 1 are not fixture-confirmed yet; pass "
+            "--allow-unconfirmed-index for an explicit experiment"
+        )
+
+    data = bytearray(template.read_bytes())
+    if not data.startswith(MAGIC):
+        raise ValueError("template is not a recognized WinProLadder PDW")
+
+    recovered = recover_program_candidate(bytes(data))
+    validate_minimal_template(recovered)
+
+    records = split_records(bytes(data))
+    key = derive_program_xor_key(bytes(data))
+    active_plain = bytearray(xor_bytes(records[0], key))
+    contact, output, checksum = patch_minimal_rung_plaintext(
+        active_plain, x_index, y_index, nc
+    )
+    encrypted = xor_bytes(bytes(active_plain), key)
+    data[RECORD_START:RECORD_START + RECORD_SIZE] = encrypted
+
+    output_path.write_bytes(data)
+    verify = recover_program_candidate(bytes(data))
+    verify_words = words_le(verify)
+    if verify_words[PROGRAM_CODE_START_WORD:PROGRAM_CODE_START_WORD + 2] != [
+        contact, output
+    ]:
+        output_path.unlink(missing_ok=True)
+        raise AssertionError("post-write verification failed")
+
+    return {
+        "template": str(template),
+        "output": str(output_path),
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "contact_word": f"0x{contact:04X}",
+        "output_word": f"0x{output:04X}",
+        "checksum": f"0x{checksum:04X}",
+        "ladder": f"{'ORG NOT' if nc else 'ORG'} X{x_index} ; OUT Y{y_index}",
+        "scope": (
+            "fixture-confirmed" if x_index <= 1 and y_index <= 1
+            else "experimental-unconfirmed-index"
+        ),
+    }
+
+
 def summarize_program_candidate(data: bytes, max_words: int = 64) -> dict:
     recovered = recover_program_candidate(data)
     words = words_le(recovered)
@@ -440,19 +559,45 @@ def main() -> int:
         help="optional path for the derived 40960-byte candidate image",
     )
 
+    p_write = sub.add_parser(
+        "write-minimal",
+        help="write a derived 2-word ORG/ORG NOT Xn -> OUT Yn PDW from a safe template",
+    )
+    p_write.add_argument("template", type=Path)
+    p_write.add_argument("output", type=Path)
+    p_write.add_argument("--x", type=int, required=True, dest="x_index")
+    p_write.add_argument("--y", type=int, required=True, dest="y_index")
+    p_write.add_argument("--nc", action="store_true", help="use ORG NOT instead of ORG")
+    p_write.add_argument("--force", action="store_true")
+    p_write.add_argument(
+        "--allow-unconfirmed-index",
+        action="store_true",
+        help="allow X/Y indices above 1 for explicit experiments",
+    )
+
     args = parser.parse_args()
 
     if args.command == "inspect":
         payload = asdict(inspect_file(args.file))
     elif args.command == "compare":
         payload = compare_files(args.left, args.right)
-    else:
+    elif args.command == "recover-program":
         data = args.file.read_bytes()
         recovered = recover_program_candidate(data)
         if args.output is not None:
             args.output.write_bytes(recovered)
         payload = summarize_program_candidate(data)
         payload["output"] = str(args.output) if args.output is not None else None
+    else:
+        payload = write_minimal_rung(
+            args.template,
+            args.output,
+            args.x_index,
+            args.y_index,
+            nc=args.nc,
+            force=args.force,
+            allow_unconfirmed_index=args.allow_unconfirmed_index,
+        )
 
     print(json.dumps(payload, indent=2, ensure_ascii=False))
     return 0
