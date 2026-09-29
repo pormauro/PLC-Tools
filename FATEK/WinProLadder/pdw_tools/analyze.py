@@ -419,6 +419,94 @@ def summarize_program_metadata(recovered: bytes) -> dict:
     }
 
 
+def write_sequential_experimental(
+    template: Path,
+    output_path: Path,
+    code_words: Sequence[int],
+    force: bool = False,
+) -> dict:
+    """Write a short sequential program stream using the confirmed metadata rules.
+
+    Scope is deliberately limited to <=55 words so the currently observed
+    byte-0xCA length relation does not wrap. This is an experimental writer.
+    """
+    if template.resolve() == output_path.resolve():
+        raise ValueError("output must be different from template")
+    if output_path.exists() and not force:
+        raise FileExistsError(f"output already exists: {output_path}")
+    if not code_words:
+        raise ValueError("at least one code word is required")
+    if len(code_words) > 55:
+        raise ValueError(
+            "experimental sequential writer is limited to <=55 words until "
+            "the 0xCA/0xCB length fields are mapped beyond the first range"
+        )
+    if any(not 0 <= word <= 0xFFFF for word in code_words):
+        raise ValueError("all code words must be 16-bit values")
+
+    data = bytearray(template.read_bytes())
+    if not data.startswith(MAGIC):
+        raise ValueError("template is not a recognized WinProLadder PDW")
+
+    recovered = bytearray(recover_program_candidate(bytes(data)))
+    key = derive_program_xor_key(bytes(data))
+
+    # Preserve the template's save-state/header words, but reconstruct the
+    # sequential code region and the metadata proven by 0/2/13/36-word fixtures.
+    recovered[0x202:] = bytes([ERASED_BYTE]) * (len(recovered) - 0x202)
+    n = len(code_words)
+    recovered[0xCA] = (0x23 + 4 * n) & 0xFF
+    recovered[0xCB] = 0xFF
+    checksum = (sum(code_words) - 1) & 0xFFFF
+    recovered[0xCC:0xCE] = checksum.to_bytes(2, "little")
+    recovered[0x103] = 0x00
+    recovered[0x108:0x10A] = n.to_bytes(2, "little")
+    recovered[0x10A:0x10C] = (0x4EFF - n).to_bytes(2, "little")
+    code_end = 0x202 + 2 * n
+    recovered[0x10E:0x110] = code_end.to_bytes(2, "little")
+    recovered[0x110:0x112] = code_end.to_bytes(2, "little")
+
+    for index, word in enumerate(code_words):
+        offset = 0x202 + 2 * index
+        recovered[offset:offset + 2] = word.to_bytes(2, "little")
+
+    # Reapply the template transform to all 32 program records.
+    for index in range(PROGRAM_RECORD_COUNT):
+        plain = recovered[index * RECORD_SIZE:(index + 1) * RECORD_SIZE]
+        encrypted = xor_bytes(bytes(plain), key)
+        start = RECORD_START + index * RECORD_SIZE
+        data[start:start + RECORD_SIZE] = encrypted
+
+    output_path.write_bytes(data)
+
+    verify = recover_program_candidate(bytes(data))
+    verify_words = words_le(verify)
+    if verify_words[PROGRAM_CODE_START_WORD:PROGRAM_CODE_START_WORD + n] != list(code_words):
+        output_path.unlink(missing_ok=True)
+        raise AssertionError("post-write sequential verification failed")
+    metadata = summarize_program_metadata(verify)
+    if not (
+        metadata["checksum_matches"]
+        and metadata["count_complement_matches"]
+        and metadata["code_end_matches"]
+        and metadata["length_derived_byte_0xCA_matches"]
+    ):
+        output_path.unlink(missing_ok=True)
+        raise AssertionError("post-write metadata verification failed")
+
+    return {
+        "template": str(template),
+        "output": str(output_path),
+        "size": len(data),
+        "sha256": hashlib.sha256(data).hexdigest(),
+        "code_word_count": n,
+        "code_words_hex": [f"0x{word:04X}" for word in code_words],
+        "checksum": f"0x{checksum:04X}",
+        "code_end": f"0x{code_end:04X}",
+        "scope": "experimental-short-sequential-stream",
+    }
+
+
 def summarize_program_candidate(data: bytes, max_words: int = 64) -> dict:
     recovered = recover_program_candidate(data)
     words = words_le(recovered)
@@ -613,8 +701,24 @@ def main() -> int:
     p_write.add_argument(
         "--allow-unconfirmed-index",
         action="store_true",
-        help="allow X/Y indices above 1 for explicit experiments",
+        help="allow X/Y indices above 2 for explicit experiments",
     )
+
+    p_seq = sub.add_parser(
+        "write-sequential-experimental",
+        help=(
+            "write a short raw sequential-word stream using metadata rules "
+            "confirmed by the controlled corpus"
+        ),
+    )
+    p_seq.add_argument("template", type=Path)
+    p_seq.add_argument("output", type=Path)
+    p_seq.add_argument(
+        "words",
+        nargs="+",
+        help="16-bit words, e.g. 0x1C48 0x1D68 0x40F9",
+    )
+    p_seq.add_argument("--force", action="store_true")
 
     args = parser.parse_args()
 
@@ -629,7 +733,7 @@ def main() -> int:
             args.output.write_bytes(recovered)
         payload = summarize_program_candidate(data)
         payload["output"] = str(args.output) if args.output is not None else None
-    else:
+    elif args.command == "write-minimal":
         payload = write_minimal_rung(
             args.template,
             args.output,
@@ -638,6 +742,14 @@ def main() -> int:
             nc=args.nc,
             force=args.force,
             allow_unconfirmed_index=args.allow_unconfirmed_index,
+        )
+    else:
+        parsed_words = [int(value, 0) for value in args.words]
+        payload = write_sequential_experimental(
+            args.template,
+            args.output,
+            parsed_words,
+            force=args.force,
         )
 
     print(json.dumps(payload, indent=2, ensure_ascii=False))
