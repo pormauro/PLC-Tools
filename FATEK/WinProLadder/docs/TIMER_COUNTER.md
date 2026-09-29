@@ -107,14 +107,16 @@ Likewise, the stable C0 block contains:
 
     9005
 
-Working candidate:
+The LDR probes that changed `9003 -> 9103` and `9005 -> 9105` did **not** change the displayed devices. After saving `todo v2.pdw`, WinProLadder canonicalized them back to `9003` and `9005` while still displaying T0/C0.
 
-    T0 = 9003
-    T1 = 9103  [next probe]
-    C0 = 9005
-    C1 = 9105  [next probe]
+Therefore these words are **not yet proven T/C index fields**, and that hypothesis is rejected for the LDR path.
 
-This is deliberately a hypothesis until WinProLadder displays T1/C1.
+A direct-PDW probe has now been prepared to bypass possible LDR-envelope normalization:
+
+    C candidate: 40F9 ... 9105 ...
+    T candidate: 80FD ... 9103 ...
+
+This will determine whether the importer normalized a valid raw program form or whether the fields truly do not encode the device index.
 
 ## Current evidence levels
 
@@ -137,3 +139,27 @@ Pending:
 - 1S general timer opcode;
 - T50/C1/C2 once index encoding is proven;
 - 16/32-bit counter families.
+
+
+## todo v2 — failed import behavior
+
+The user imported the 1S timer LDR probe twice. Each attempt shifted all existing networks down by one position but no visible instruction was inserted.
+
+The saved PDW begins:
+
+    EB5F
+    EB5F
+    [valid C0 PV300]
+    [valid T0 .01S PV300]
+    [valid C0 PV25]
+    [valid T0 .01S PV25]
+
+The two leading `0xEB5F` words correspond one-for-one with the two visibly blank N000/N001 networks.
+
+Within this corpus:
+
+    0xEB5F = empty network marker / empty-network sequential form
+
+The exact reason the 1S LDR import collapses to an empty network is still open. A direct-PDW `82FD` probe is prepared to separate LDR-import behavior from raw PDW semantics.
+
+The same project produced Syntax Check: 1 error, 7 warnings. Which specific networks account for those diagnostics has not yet been isolated.
