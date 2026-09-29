@@ -234,6 +234,15 @@ def words_le(buf: bytes) -> list[int]:
 
 
 def decode_sequential_word(word: int) -> dict | None:
+    if word == 0xEB5F:
+        return {
+            "word": word,
+            "hex_word": "0xEB5F",
+            "mnemonic": "EMPTY_NETWORK",
+            "operand": None,
+            "text": "empty network",
+            "evidence": "confirmed by todo v2: two failed imports produced two leading blank networks",
+        }
     opcode = word & 0xFF
     index = (word >> 8) & 0xFF
     known = KNOWN_LOW_OPCODES.get(opcode)
