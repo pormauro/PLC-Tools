@@ -1,78 +1,139 @@
 # Timer / Counter reverse engineering
 
-Status: **T0/T1, C0/C1 and PV <=100 empirically mapped; next probes prepared.**
+Status: **T0/C0, time-base selection, PV byte order and counter input operands confirmed. T/C index field candidate isolated.**
 
-## Timer
+## Correction from `todooo.pdw`
 
-Observed blocks:
+The combined validation fixture disproved two earlier interpretations:
 
-    T0 PV10:  1B48 80FD 0A00 9003 FC6F 19C8
-    T0 PV25:  1B48 80FD 1900 9003 FC6F 19C8
-    T1 PV25:  1B48 81FD 1900 9003 FC6F 19C8
+- `0x81FD` is **not T1**. With the same timer reference it displays T0 with **0.1S** time base.
+- `0x41FD` / `0x42FD` are **not C1/C2**. WinProLadder displays them as function instructions FUN87 T.01S and FUN88 T.1S.
 
-Stable context:
+The official FATEK instruction table identifies:
 
-- `1B48` = ORG M11
-- `19C8` = OUT M9
-- `9003 FC6F` stayed constant in all current timer probes
+- FUN87 = T.01S, 0.01 s accumulative timer;
+- FUN88 = T.1S, 0.1 s accumulative timer;
+- FUN89 = T1S, 1 s accumulative timer.
 
-Changes:
+This matches the screenshots exactly for 0x41FD and 0x42FD.
 
-- T0 -> T1: `80FD -> 81FD`
-- PV10 -> PV25: `0A00 -> 1900`
+## General timer block
 
-## Counter
+Confirmed T0 examples:
 
-Observed blocks:
+    T0 .01S PV10:
+    1B48 80FD 0A00 9003 FC6F 19C8
 
-    C0 PV100: 1C48 1D68 40F9 6400 9005 FC6F 1AC8
-    C0 PV25:  1C48 1D68 40F9 1900 9005 FC6F 1AC8
-    C1 PV25:  1C48 1D68 41FD 1900 9005 FC6F 1AC8  [canonical PDW]
+    T0 .01S PV25:
+    1B48 80FD 1900 9003 FC6F 19C8
 
-Stable context:
+    T0 .1S PV25:
+    1B48 81FD 1900 9003 FC6F 19C8
 
-- `1C48` = top input M12
-- `1D68` = lower input M13
-- `1AC8` = OUT M10
-- `9005 FC6F` constant in current counter fixtures
+Interpretation:
 
-### Importer normalization
+- `1B48` = ORG M11;
+- `80FD` = general timer, 0.01 s base, confirmed;
+- `81FD` = general timer, 0.1 s base, confirmed;
+- `9003` is unchanged while display remains T0, therefore it is the leading candidate for the T-device reference;
+- `FC6F` remains structural/terminator-like;
+- `19C8` = OUT M9.
 
-The test LDR changed C0 `40F9` to `41F9`.
+Candidate, not yet confirmed:
 
-WinProLadder accepted the import, but saved the resulting C1 as `41FD`.
+    82FD = general timer, 1 s base
 
-Do not encode arbitrary counters by extending the C0 form until C2 is checked.
+## General counter block
 
-## PV
+Confirmed C0:
 
-Immediate word evidence:
+    C0 PV100:
+    1C48 1D68 40F9 6400 9005 FC6F 1AC8
 
-| PV | word |
-|---:|---:|
-| 10 | 0x000A |
-| 25 | 0x0019 |
-| 100 | 0x0064 |
+    C0 PV25:
+    1C48 1D68 40F9 1900 9005 FC6F 1AC8
 
-Prepared probe PV300 = `0x012C` will test full 16-bit little-endian storage.
+Counter input mutation tests:
 
-## Time base
+    1E48 1D68 ... -> top PLS/CUP input M14, lower CLR remains M13
+    1C48 1F68 ... -> top input remains M12, lower CLR input M15
 
-Official FBs documentation gives the default timer ranges:
+Therefore:
 
-- T0..T49: 0.01 s
-- T50..T199: 0.1 s
-- T200..T255: 1 s
+- top contact device encoding follows the known M contact rule;
+- second input uses low byte `0x68` with the same M index base;
+- `40F9` is part of the normal counter instruction form for C0;
+- `9005` is unchanged while display remains C0, making it the leading candidate for the C-device reference.
 
-Current binary evidence only covers T0/T1. A T50 probe is prepared to determine whether the time-base display follows timer range implicitly while the rest of the timer block remains unchanged.
+## Preset encoding — CONFIRMED BYTE ORDER
 
-## Prepared probes
+Raw code bytes store the numeric preset high byte first:
 
-- T50 PV25
-- T1 PV300
-- C2 PV25 using canonical-family candidate `0x42FD`
-- C1 PV300 using canonical `0x41FD`
-- counter top input M12 -> M14
-- counter lower CLR input M13 -> M15
+| Value | raw bytes in code | little-endian diagnostic word |
+|---:|---|---:|
+| 10 | 00 0A | 0x0A00 |
+| 25 | 00 19 | 0x1900 |
+| 100 | 00 64 | 0x6400 |
+| 300 | 01 2C | 0x2C01 |
 
-These are intentionally one-variable-at-a-time experiments.
+The failed PV300 probe wrote `2C 01`; WinProLadder displayed **11265 = 0x2C01**. This directly proves the byte order.
+
+Do not describe the preset as a little-endian immediate.
+
+## Accumulative timer function forms found accidentally
+
+The invalid C-index probes were useful semantic oracles:
+
+    41FD ... -> FUN87 T.01S
+    42FD ... -> FUN88 T.1S
+
+These are function instructions, not C1/C2.
+
+The bad T50 probe produced:
+
+    B2F5 ... -> FUN43 NBM
+
+That probe is rejected as a timer-index encoding.
+
+## T/C index field candidate
+
+Because changing `80FD -> 81FD` changes only the timer base while the displayed device stays T0, the T index is not encoded there.
+
+The stable T0 block contains:
+
+    9003
+
+Likewise, the stable C0 block contains:
+
+    9005
+
+Working candidate:
+
+    T0 = 9003
+    T1 = 9103  [next probe]
+    C0 = 9005
+    C1 = 9105  [next probe]
+
+This is deliberately a hypothesis until WinProLadder displays T1/C1.
+
+## Current evidence levels
+
+Confirmed:
+
+- general timer .01S = 80FD for the observed block;
+- general timer .1S = 81FD;
+- C0 normal counter block uses 40F9;
+- PV raw byte order;
+- M14 top counter input;
+- M15 CLR input;
+- 41FD = FUN87 T.01S;
+- 42FD = FUN88 T.1S;
+- B2F5 is not the T50 form and is displayed as FUN43 NBM.
+
+Pending:
+
+- T index field;
+- C index field;
+- 1S general timer opcode;
+- T50/C1/C2 once index encoding is proven;
+- 16/32-bit counter families.
