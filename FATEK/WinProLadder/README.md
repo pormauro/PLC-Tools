@@ -4,20 +4,21 @@ Ingeniería inversa reproducible de proyectos FATEK WinProLadder (.pdw) y format
 
 ## Estado
 
-**Fase 1 avanzada — lectura, recuperación y decodificación mínima comprobada. Sin writer PDW todavía.**
+**Fase 2 inicial — writer mínimo validado y estructura multi-network localizada.**
 
-El corpus controlado ya permitió demostrar:
+Ya está demostrado:
 
-- región de programa candidata de 40.960 bytes = 20.480 words = 20K words;
-- recuperación determinística usando registros borrados 0xFF;
-- re-guardados con ladder idéntico cambian sólo un word variable al inicio de la imagen recuperada;
-- X0 NO -> Y0 = `0x0040 0x00C1`;
-- X1 NO -> Y0 = `0x0140 0x00C1`;
-- X0 NO -> Y1 = `0x0040 0x01C1`;
-- X0 NC -> Y0 = `0x0050 0x00C1`;
-- X0 NC -> Y1 = `0x0050 0x01C1`;
-- el export LDR de NC X0 -> Y0 contiene literalmente `50 00 C1 00`;
-- el segundo gran grupo del PDW no cambia semánticamente con estos ladders una vez eliminados 8 bytes variables de guardado.
+- recuperación de imagen de programa de 20K words;
+- mutación PDW real aceptada por WinProLadder;
+- X/Y indices 0,1,2;
+- checksum aditivo de programa;
+- word count, complement y end pointers;
+- LDR importable y registros de network delimitados;
+- relación exacta entre LDR por-network y stream PDW;
+- M ORG/NOT/OUT/OUT NOT;
+- SET/RST normal y P;
+- TU/TD en los casos observados;
+- localización de bloques timer y counter.
 
 ## Herramientas
 
@@ -26,19 +27,15 @@ El corpus controlado ya permitió demostrar:
     python FATEK/WinProLadder/pdw_tools/analyze.py inspect proyecto.pdw
     python FATEK/WinProLadder/pdw_tools/analyze.py compare A.pdw B.pdw
     python FATEK/WinProLadder/pdw_tools/analyze.py recover-program proyecto.pdw
-    python FATEK/WinProLadder/pdw_tools/analyze.py recover-program proyecto.pdw --output program.bin
-    python FATEK/WinProLadder/pdw_tools/analyze.py write-minimal template.pdw salida.pdw --x 1 --y 0
-    python FATEK/WinProLadder/pdw_tools/analyze.py write-minimal template.pdw salida.pdw --x 0 --y 0 --nc
+    python FATEK/WinProLadder/pdw_tools/analyze.py write-minimal template.pdw salida.pdw --x 2 --y 0
 
-El resumen incluye un decoder mínimo para los sequential words ya comprobados.
-
-El writer mínimo está validado externamente en WinProLadder para una mutación X0->Y0 a X1->Y0: apertura PASS + Syntax Check PASS. Rechaza templates complejos y no sobrescribe el original.
+El writer mínimo no sobrescribe el original y valida el resultado decodificándolo.
 
 ### LDR
 
-    python FATEK/WinProLadder/ldr_tools/analyze.py ladder.ldr
+    python FATEK/WinProLadder/ldr_tools/analyze.py varios.ldr
 
-El inspector muestra cabecera, payload, words little-endian y las instrucciones conocidas.
+Ahora separa networks, longitudes, code words, trailers y anotaciones conocidas.
 
 ## Documentación
 
@@ -49,45 +46,27 @@ El inspector muestra cabecera, payload, words little-endian y las instrucciones 
 - `docs/MINIMAL_WRITER_VALIDATION.md`
 - `fixtures/MANIFEST.md`
 
-## Estrategia
+## Arquitectura objetivo
 
-Hay dos caminos paralelos:
+    Ladder / Universal IR
+             |
+             +--> FATEK sequential IR
+                        |
+                        +--> LDR
+                        |
+                        +--> PDW program image
+                                |
+                                +--> template-preserving project pack
 
-    Universal IR
-       |
-       +--> LDR  --> WinProLadder import       [camino corto para lógica]
-       |
-       +--> PDW  --> proyecto completo         [camino completo]
+## Próxima prioridad
 
-LDR parece mucho más directo y puede permitir generar ladder importable antes de terminar el empaquetador PDW.
+Aislar individualmente:
 
-PDW sigue siendo necesario para preservar proyecto completo: hardware, configuración, tablas, comunicaciones y demás recursos.
+1. timer T0 con cambios de PV/base;
+2. counter C0 con CK/CLR/PV;
+3. AND y OR simples sin ramas complejas;
+4. dos networks mínimos;
+5. SET/RST P sin otros cambios;
+6. crecimiento a más de un registro de 1.280 bytes.
 
-## Próximos fixtures prioritarios
-
-Para ampliar el set de instrucciones:
-
-1. X2 -> Y0 y X0 -> Y2 para validar el patrón de índice más allá de 0/1.
-2. X0 AND X1 -> Y0.
-3. X0 OR X1 -> Y0.
-4. X0 -> SET Y0.
-5. X0 -> RST Y0.
-6. Timer simple.
-7. Counter simple.
-8. Dos networks independientes.
-9. Export LDR correspondiente a cada uno.
-
-Después:
-
-- comentarios;
-- tablas;
-- status pages;
-- módulos/I/O;
-- comunicaciones;
-- configuración de expansión.
-
-## Meta
-
-    PDW <-> FATEK IR <-> IR universal / PLCopen <-> otros fabricantes
-
-La escritura directa de PDW se habilitará únicamente con round-trip comprobado en WinProLadder.
+Después se avanza sobre tablas, comentarios, I/O, comunicaciones y hardware.
