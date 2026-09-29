@@ -1,66 +1,130 @@
-# Sequential words — minimal confirmed map
+# Sequential words — confirmed map
 
-Estado: **confirmado para los operandos observados en el corpus del 2026-09-28**.
+Estado: **mapa incremental basado en fixtures controlados y validación visual WinProLadder**.
 
-## Programa mínimo recuperado
+## X / Y mínimos
 
-El código del rung mínimo comienza en el word 257 de la imagen candidata de 20K words.
+| Forma | Word observado |
+|---|---:|
+| ORG X0 | 0x0040 |
+| ORG X1 | 0x0140 |
+| ORG X2 | 0x0240 |
+| ORG NOT X0 | 0x0050 |
+| OUT Y0 | 0x00C1 |
+| OUT Y1 | 0x01C1 |
+| OUT Y2 | 0x02C1 |
 
-| Ladder conocido | Word 257 | Word 258 |
+Para X/Y observados:
+
+    word = (device_index << 8) | low_opcode
+
+Writer externo validado en WinProLadder hasta índice 2.
+
+## Hallazgos del fixture varios
+
+La captura de pantalla, `varios.pdw` y `varios.ldr` representan exactamente el mismo programa de 8 networks.
+
+### N000
+
+Pantalla:
+
+    X1 en paralelo con Y0
+    luego X0 NC
+    OUT Y0
+
+Words:
+
+    0140 00A1 0090 00C1
+
+Mapeo:
+
+| Word | Instrucción |
+|---:|---|
+| 0x0140 | ORG X1 |
+| 0x00A1 | OR Y0 |
+| 0x0090 | AND NOT X0 |
+| 0x00C1 | OUT Y0 |
+
+### M coils
+
+N001:
+
+    1048 11C8 12D8
+
+corresponde a:
+
+    ORG M0
+    OUT M1
+    OUT NOT M2
+
+Para los M observados, el byte alto es:
+
+    0x10 + M_index
+
+Mapa confirmado:
+
+| low byte | instrucción M |
+|---:|---|
+| 0x48 | ORG M |
+| 0x58 | ORG NOT M |
+| 0xC8 | OUT M |
+| 0xD8 | OUT NOT M |
+
+### SET / RST normal y por pulso
+
+Bytes/words observados:
+
+| Forma | function word | operand word |
 |---|---:|---:|
-| X0 NO -> Y0 | 0x0040 | 0x00C1 |
-| X1 NO -> Y0 | 0x0140 | 0x00C1 |
-| X0 NO -> Y1 | 0x0040 | 0x01C1 |
-| X0 NC -> Y0 | 0x0050 | 0x00C1 |
-| X0 NC -> Y1 | 0x0050 | 0x01C1 |
+| SET M4 | 0x82FC | 0x1408 |
+| SET P M6 | 0x82F8 | 0x1608 |
+| RST M4 | 0xC4FC | 0x1408 |
+| RST P M6 | 0xC4F8 | 0x1608 |
 
-## Codificación demostrada
+Separación empírica:
 
-Para los casos observados:
+- SET vs RST: `0x82..` vs `0xC4..`;
+- normal vs P: low byte `FC` vs `F8`;
+- operand M usa forma `0x(0x10+index)08` en este contexto.
 
-    word = (device_index << 8) | opcode
+### Diferencial / flancos
 
-Se demuestra porque:
+Observados:
 
-- X0 -> X1 cambia sólo el byte alto: 0x0040 -> 0x0140.
-- Y0 -> Y1 cambia sólo el byte alto: 0x00C1 -> 0x01C1.
-- NO -> NC sobre X0 cambia sólo el byte bajo: 0x0040 -> 0x0050.
-- cambiar Y0/Y1 no altera el word del contacto;
-- cambiar NO/NC no altera el word de salida.
+    0x00EA = TU sobre estado de línea
+    0x00E8 = TD sobre estado de línea
 
-## Mapa confirmado
+Para contactos de borde al inicio de network se observa un prefijo:
 
-| Opcode bajo | Forma observada | Evidencia |
-|---:|---|---|
-| 0x40 | ORG Xn | confirmado para X0 y X1 |
-| 0x50 | ORG NOT Xn | confirmado para X0; layout de índice coherente con el esquema general |
-| 0xC1 | OUT Yn | confirmado para Y0 y Y1 |
+    0x00E0 + 0x1348 -> ORG TU M3
+    0x00E0 + 0x1758 -> ORG TD M7
 
-No extrapolar todavía a X2+, Y2+ como contrato de writer sin fixture adicional, aunque el patrón sea muy fuerte.
+No generalizar todavía ese prefijo a otras familias sin fixture.
 
-## Confirmación cruzada LDR
+## Timer y counter — estructura localizada, campos internos todavía parciales
 
-El archivo NC-X0-Y0.ldr contiene, sin la transformación del PDW:
+N006, Timer T0, base .01S, PV=10, TUP -> M9:
 
-    50 00 C1 00
+    1B48 80FD 0A00 9003 FC6F 19C8
 
-Interpretado little-endian:
+Confirmado:
 
-    0x0050
-    0x00C1
+    1B48 = ORG M11
+    19C8 = OUT M9
 
-Esto coincide exactamente con la imagen de programa recuperada desde NC-X0-Y0.pdw y valida de forma independiente el orden de los words.
+El bloque intermedio corresponde al timer mostrado, pero los subcampos todavía no se etiquetan individualmente.
 
-## Próximos opcodes a mapear
+N007, Counter C0, PV=100, CUP -> M10 con M12/M13 como entradas:
 
-Prioridad MVP:
+    1C48 1D68 40F9 6400 9005 FC6F 1AC8
 
-1. OR / OR NOT
-2. AND / AND NOT
-3. SET
-4. RST
-5. timer T
-6. counter C
-7. segundo network
-8. M, S y otros tipos de dispositivo
-9. índices mayores para comprobar rollover/anchura de operandos
+Confirmado:
+
+    1C48 = ORG M12
+    1AC8 = OUT M10
+
+El resto se conserva como bloque de counter hasta aislar CK/CLR/PV en fixtures unitarios.
+
+## Regla de evidencia
+
+Una secuencia se marca como **confirmada** sólo cuando la semántica está fijada por un fixture controlado o por la captura correspondiente. Los campos internos de bloques complejos permanecen sin nombre hasta aislarse.
