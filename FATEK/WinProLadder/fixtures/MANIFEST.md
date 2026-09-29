@@ -17,6 +17,7 @@ Los binarios originales no se modifican. Este manifiesto permite comprobar ident
 | NC-X0-Y0.ldr | Export Ladder Diagram del fixture NC-X0-Y0 | 277 | 12ad626d979d9a8f02d5ddeeda9a78af319befba9c2932c3d5522eac3ee8d0e5 |
 | varios.pdw | 8 networks: ramas, M, edge, SET/RST normal/P, timer y counter | 98.871 | f808927f76adb5386369a9492f1d8512d3382bcffb1a0b2b4ad25f1769e191a6 |
 | varios.ldr | Export Ladder Diagram exacto de varios.pdw | 422 | 7ffb79a3137f29bbb50c1441f37dffe83419ebbebec7c3623b8a5b75564fe2a3 |
+| timer + counter.pdw | Dos networks guardados por WinProLadder; timer T0 PV25 + counter C0 PV25 | 98.871 | 7d02f3902aebae236a41ae0cde16264592af4cd75af62478666522e7a8662c0a |
 
 ## Hallazgos reproducibles
 
@@ -26,7 +27,9 @@ Los binarios originales no se modifican. Este manifiesto permite comprobar ident
 - varios: 36 words, 8 networks, y el stream PDW coincide exactamente con la concatenación de los 8 payloads LDR en orden N000 -> N007.
 - checksum PDW: `(sum(code_words)-1) & 0xFFFF`.
 - SET/RST normal y P quedan separados en el stream.
-- timer/counter quedan localizados como bloques para el siguiente aislamiento.
+- timer/counter: PV10->PV25 cambia `0x0A00 -> 0x1900` y counter PV100->PV25 cambia `0x6400 -> 0x1900`.
+- timer + counter: 13 words, 2 networks, confirma count/complement/end/checksum/length byte.
+- reconstruyendo desde X0-Y0.pdw el mismo stream de 13 words con las fórmulas documentadas se obtiene una imagen de programa idéntica a `timer + counter.pdw` desde el byte recuperado 2 hasta EOF de la imagen de 20K words.
 
 ## Política
 
