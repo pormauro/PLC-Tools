@@ -1,87 +1,105 @@
-# Minimal PDW writer validation
+# Minimal PDW/LDR writer validation
 
-Status: **first real write/open/syntax-check gate passed on 2026-09-28**.
+Status: **real WinProLadder write/open/check gates passed on 2026-09-28**.
 
-## Experiment
+## PDW test 1 — X1
 
-Source template:
+Source:
 
     X0-Y0.pdw
     SHA-256 ed415db334e916eeec556f6da5df4eecb438ab304bcbe2677be2b1fac9446cb9
 
-Target semantics:
-
-    ORG X1
-    OUT Y0
-
-A derived file was produced by preserving the source PDW transformation and changing only the semantic bytes required by the controlled corpus.
-
-Physical PDW bytes changed:
-
-    0x001ED: 62 -> 61
-    0x00323: 84 -> 85
-
-Derived file:
+Derived:
 
     TEST-X1-Y0-FROM-X0-Y0.pdw
     SHA-256 4a19a3b9ab5a1f9a75a50482678e2169f5c1acc86f41af825a4c304f705258f7
 
-## External validation in WinProLadder
+Validation:
 
-User validation result:
+- opens in WinProLadder: PASS
+- displays X1 -> Y0: PASS
+- Syntax Check: PASS
 
-- file opens successfully: PASS;
-- ladder displays the intended X1 -> Y0 semantics: PASS;
-- WinProLadder Syntax Check: PASS.
+## PDW test 2 — X2
 
-This is the first demonstrated PDW semantic write round-trip.
+Derived:
 
-## What this proves
+    TEST-X2-Y0.pdw
+    SHA-256 3b8b068e6c92c094b9d452cb839f3e95f783c40eecaed76512afe9dee46eb860
 
-For the current minimal two-word rung family, it is possible to:
+Expected:
 
-1. start from a valid PDW template;
-2. derive its periodic transform from an erased program record;
-3. recover the active program record;
-4. edit confirmed semantic/control fields;
-5. recalculate the observed additive code checksum;
-6. reapply the original template transform;
-7. produce a PDW accepted by WinProLadder.
+    ORG X2
+    OUT Y0
 
-The save/keystream generation algorithm does not need to be known to perform a safe template-preserving mutation in this narrow proven scope.
+Validation reported by user:
 
-## What this does NOT prove
+- opens correctly: PASS
+- intended ladder: PASS
+- check: PASS
 
-It does not yet authorize arbitrary PDW generation.
+## PDW test 3 — Y2
 
-Still unknown:
+Derived:
 
-- programs longer than the current 2-word rung family;
-- multiple networks;
-- variable-length instructions;
-- regeneration of a PDW without a valid template;
-- exact meaning/generation of save-state bytes;
-- full integrity model;
-- project tables, I/O, communications and expansion configuration.
+    TEST-X0-Y2.pdw
+    SHA-256 6c1112d3bd9939fe7f2ff72767f94fc0370a5f31877b3acbfb6bbaf3de336bb7
+
+Expected:
+
+    ORG X0
+    OUT Y2
+
+Validation reported by user:
+
+- opens correctly: PASS
+- intended ladder: PASS
+- check: PASS
+
+These two tests extend the X/Y high-byte index rule through indices 0, 1 and 2.
+
+## LDR mutation test
+
+Source:
+
+    NC-X0-Y0.ldr
+
+Derived:
+
+    TEST-X0-Y0.ldr
+    SHA-256 406e2a75da3e4292135a83d71644a80f8f562a5c433e0257b9125259d1397589
+
+Mutation:
+
+    file offset 0x0106: 50 -> 40
+
+Expected code:
+
+    40 00 C1 00
+    ORG X0
+    OUT Y0
+
+WinProLadder import: PASS.
+
+This is the first demonstrated LDR semantic mutation accepted by WinProLadder.
+
+## What is proven
+
+For the current scope it is possible to:
+
+1. recover semantic PDW program bytes;
+2. preserve the source transformation;
+3. modify confirmed instructions/operands;
+4. recompute the additive program checksum;
+5. produce a PDW accepted by WinProLadder;
+6. mutate same-length LDR code and import it.
 
 ## Guarded CLI
 
-    python FATEK/WinProLadder/pdw_tools/analyze.py write-minimal template.pdw output.pdw --x 1 --y 0
-    python FATEK/WinProLadder/pdw_tools/analyze.py write-minimal template.pdw output.pdw --x 0 --y 0 --nc
+    python FATEK/WinProLadder/pdw_tools/analyze.py write-minimal template.pdw output.pdw --x 2 --y 0
 
-Rules:
+Indices 0..2 are now fixture/WinProLadder-confirmed. Higher indices remain experimental and require `--allow-unconfirmed-index`.
 
-- source and output must differ;
-- writer refuses complex templates;
-- output is verified by decoding after write;
-- X/Y > 1 require `--allow-unconfirmed-index` until experimentally validated;
-- source PDW is never overwritten.
+## Not yet authorized
 
-## Next writer gate
-
-Validate index 2:
-
-    X2 -> Y0  expected words 0x0240 0x00C1  checksum 0x0300
-    X0 -> Y2  expected words 0x0040 0x02C1  checksum 0x0300
-
-If both open and pass Syntax Check, the high-byte device-index rule is confirmed beyond the original 0/1 corpus.
+This does not yet prove arbitrary PDW generation. Multi-network code, variable-length blocks and unresolved structural bytes are still under investigation.
