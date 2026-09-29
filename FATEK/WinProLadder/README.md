@@ -50,7 +50,7 @@ Separa network records, longitudes, code words, trailers y anotaciones conocidas
 - `docs/SEQUENTIAL_WORDS.md`
 - `docs/FORMAT_LDR.md`
 - `docs/MINIMAL_WRITER_VALIDATION.md`
-- `docs/VARIOS_FIXTURE.md`
+- `docs/VARIOS_FIXTURE.md`\n- `docs/TIMER_COUNTER_ROUNDTRIP.md`
 - `docs/TIMER_COUNTER_ROUNDTRIP.md`
 - `fixtures/MANIFEST.md`
 
