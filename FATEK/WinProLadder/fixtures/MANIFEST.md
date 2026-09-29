@@ -17,19 +17,23 @@ Los binarios originales no se modifican. Este manifiesto permite comprobar ident
 | NC-X0-Y0.ldr | Export Ladder Diagram del fixture NC-X0-Y0 | 277 | 12ad626d979d9a8f02d5ddeeda9a78af319befba9c2932c3d5522eac3ee8d0e5 |
 | varios.pdw | 8 networks: ramas, M, edge, SET/RST normal/P, timer y counter | 98.871 | f808927f76adb5386369a9492f1d8512d3382bcffb1a0b2b4ad25f1769e191a6 |
 | varios.ldr | Export Ladder Diagram exacto de varios.pdw | 422 | 7ffb79a3137f29bbb50c1441f37dffe83419ebbebec7c3623b8a5b75564fe2a3 |
-| timer + counter.pdw | Dos networks guardados por WinProLadder; timer T0 PV25 + counter C0 PV25 | 98.871 | 7d02f3902aebae236a41ae0cde16264592af4cd75af62478666522e7a8662c0a |
+| timer + counter.pdw | WinProLadder: C0 PV25 + T0 PV25 | 98.871 | 7d02f3902aebae236a41ae0cde16264592af4cd75af62478666522e7a8662c0a |
+| timer + counter 2.pdw | Guardado tras importar probes C1/T1 PV25 | 98.871 | 6930b15b15d5172caebd07da07e198cf232d617be072926e912afded6041d491 |
 
 ## Hallazgos reproducibles
 
 - Re-save: el programa recuperado es estable salvo el primer word de estado.
 - X/Y: ORG/ORG NOT/OUT e índices 0..2 validados externamente.
 - LDR simple: mutación NC -> NO importada correctamente.
-- varios: 36 words, 8 networks, y el stream PDW coincide exactamente con la concatenación de los 8 payloads LDR en orden N000 -> N007.
+- varios: 36 words, 8 networks, stream PDW = concatenación exacta de payloads LDR en orden N000 -> N007.
 - checksum PDW: `(sum(code_words)-1) & 0xFFFF`.
 - SET/RST normal y P quedan separados en el stream.
-- timer/counter: PV10->PV25 cambia `0x0A00 -> 0x1900` y counter PV100->PV25 cambia `0x6400 -> 0x1900`.
+- PV Timer/Counter se almacena como word little-endian inmediato: 10=`0x000A`, 25=`0x0019`, 100=`0x0064`.
 - timer + counter: 13 words, 2 networks, confirma count/complement/end/checksum/length byte.
-- reconstruyendo desde X0-Y0.pdw el mismo stream de 13 words con las fórmulas documentadas se obtiene una imagen de programa idéntica a `timer + counter.pdw` desde el byte recuperado 2 hasta EOF de la imagen de 20K words.
+- `TEST-GENERATED-TIMER-COUNTER.pdw`, construido desde X0-Y0, fue abierto por WinProLadder y mostró C0 PV25 + T0 PV25 correctamente.
+- `timer + counter 2.pdw` recupera T1 como `0x81FD` y C1 como `0x41FD`.
+- El probe LDR de C1 había sido importado como `0x41F9`; al guardar, WinProLadder lo normalizó a `0x41FD`. Por lo tanto forma aceptada y forma canónica no son necesariamente idénticas.
+- Reconstruyendo desde X0-Y0.pdw el stream canónico de C1+T1 se obtiene una imagen de programa idéntica a `timer + counter 2.pdw` desde byte recuperado 2 hasta el final de la imagen de 20K words.
 
 ## Política
 
