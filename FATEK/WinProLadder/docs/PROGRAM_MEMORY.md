@@ -1,31 +1,27 @@
 # Candidate program-memory image
 
-Status: **strong empirical identification; real WinProLadder write/open/check passed.**
+Status: **program image and short-program metadata strongly confirmed; writer remains guarded.**
 
-## Exact size match
+## Program image
 
-The first structural group begins at PDW offset `0x120` and consists of exactly 32 records of 1,280 bytes:
+The first structural group is exactly:
 
     32 * 1280 = 40960 bytes
-    40960 / 2 = 20480 16-bit words
+    40960 / 2 = 20480 words
     20480 words = 20K words
 
-The recovered image consistently contains `FBS40003`, marker `55 AA` at 0x01FE and erased 0xFF program space.
+Recovered invariants include:
 
-Program code begins at:
+- `FBS40003`;
+- marker `55 AA` at 0x01FE;
+- code starts at byte 0x0202 / word 257;
+- unused program memory recovers as 0xFF.
 
-    byte 0x0202
-    word 257
+## Save-state stability
 
-## Re-save stability
+Independent re-saves of VACIO and X0->Y0 change only recovered bytes 0x0000..0x0001. Byte 2 onward is stable for identical ladder semantics.
 
-For both VACIO and X0->Y0 re-saves, the recovered 40,960-byte image differs only at bytes 0x0000..0x0001.
-
-Those two bytes are treated as save-state/transform state, not ladder semantics.
-
-## Program metadata — CONFIRMED
-
-The `varios` fixture expands the program from 0/2 words to **36 words**, allowing several fields to be identified algebraically.
+## Program metadata — confirmed across 0, 2, 13 and 36 code words
 
 Let:
 
@@ -34,99 +30,128 @@ Let:
 
 ### Word count
 
-Relative offset:
-
-    0x0108 = n
+    u16 @0x0108 = n
 
 Observed:
 
-    VACIO       n=0   -> 0x0000
-    minimal     n=2   -> 0x0002
-    varios      n=36  -> 0x0024
+    n=0   VACIO
+    n=2   minimal rung
+    n=13  timer + counter
+    n=36  varios
 
 ### Count complement
 
-Relative offset:
+    u16 @0x010A = 0x4EFF - n
 
-    0x010A = 0x4EFF - n
+Examples:
 
-Observed:
-
-    n=0   -> 0x4EFF
-    n=2   -> 0x4EFD
-    n=36  -> 0x4EDB
+    n=13 -> 0x4EF2
+    n=36 -> 0x4EDB
 
 ### Code end pointers
 
-Relative offsets 0x010E and 0x0110 are identical:
+Both fields are identical:
+
+    u16 @0x010E
+    u16 @0x0110
+
+and:
 
     code_end = 0x0202 + 2*n
 
-Observed:
+Examples:
 
-    n=0   -> 0x0202
-    n=2   -> 0x0206
-    n=36  -> 0x024A
+    n=13 -> 0x021C
+    n=36 -> 0x024A
 
 ### Additive code checksum
 
-Relative offset:
+    u16 @0x00CC = (sum(code_words) - 1) & 0xFFFF
 
-    0x00CC = (sum(code_words) - 1) & 0xFFFF
+Examples:
 
-This now matches all current source fixtures, including the 36-word `varios.pdw`.
-
-For `varios`:
-
-    sum(words) - 1 = 0x4A57
-    stored         = 0x4A57
-
-For VACIO, an empty sum gives:
-
-    -1 & 0xFFFF = 0xFFFF
-
-which is exactly the stored value.
+    minimal X0->Y0 -> 0x0100
+    timer+counter  -> 0x9663
+    varios         -> 0x4A57
+    empty          -> 0xFFFF
 
 ### Length-derived byte
 
-Relative byte 0x00CA matches all current lengths:
+For every observed length:
 
-    byte_0xCA = (0x23 + 4*n) & 0xFF
+    byte @0x00CA = (0x23 + 4*n) & 0xFF
 
-Observed:
+Examples:
 
-    n=0   -> 0x23
-    n=2   -> 0x2B
-    n=36  -> 0xB3
+    n=0  -> 0x23
+    n=2  -> 0x2B
+    n=13 -> 0x57
+    n=36 -> 0xB3
 
-Byte 0x00CB remains unresolved and must not yet be synthesized generically.
+Current observed non-empty fixtures also have:
+
+    byte @0x00CB = 0xFF
+    byte @0x0103 = 0x00
+
+Those two values are still treated conservatively because their wider-range behavior is not proven.
+
+## Independent semantic reconstruction — strongest current evidence
+
+Source template:
+
+    X0-Y0.pdw
+
+Target stream, independently produced by WinProLadder in `timer + counter.pdw`:
+
+    1C48 1D68 40F9 1900 9005 FC6F 1AC8
+    1B48 80FD 1900 9003 FC6F 19C8
+
+A synthetic recovered program image was constructed from the X0-Y0 template by:
+
+1. erasing code from 0x0202 onward;
+2. inserting the 13 target words;
+3. setting count=13;
+4. setting complement=0x4EF2;
+5. setting end=0x021C in both end fields;
+6. setting checksum=0x9663;
+7. setting byte 0xCA=0x57;
+8. preserving the template save-state word.
+
+Result:
+
+    synthetic_image[2:] == WinProLadder_saved_timer_counter_image[2:]
+
+for the entire 40,960-byte recovered program image.
+
+That is exact byte-for-byte equality, not a similarity metric.
 
 ## Multiple networks
 
-`varios.pdw` contains 8 networks and 36 sequential words.
+The 13-word timer+counter PDW contains two sequential function blocks. The 36-word `varios` fixture contains 8 networks.
 
-Its recovered code area is the exact concatenation of the 8 `varios.ldr` network code payloads in ladder order N000 -> N007.
+No changing auxiliary network-boundary table has been found. LDR provides boundaries; PDW stores the resulting sequential stream.
 
-The previously identified second structural group still differs only in the same 8 save-state bytes, even between VACIO and this 8-network project.
+## Writer scope
 
-Therefore no separate network-boundary table has yet been observed there.
+Validated externally so far:
 
-## Writer status
-
-The template-preserving writer has passed WinProLadder open + Syntax Check for:
-
-- X0 -> Y0 transformed to X1 -> Y0;
+- X1 -> Y0;
 - X2 -> Y0;
 - X0 -> Y2.
 
-The high-byte X/Y index rule is therefore confirmed for indices 0, 1 and 2.
+An experimental short sequential writer is available for <=55 words:
 
-## Still required before arbitrary PDW generation
+    python FATEK/WinProLadder/pdw_tools/analyze.py \
+      write-sequential-experimental template.pdw output.pdw \
+      0x1C48 0x1D68 0x40F9 0x1900 0x9005 0xFC6F 0x1AC8 \
+      0x1B48 0x80FD 0x1900 0x9003 0xFC6F 0x19C8
 
-- identify bytes 0x00CB and 0x0103;
-- validate metadata at additional lengths/network counts;
-- understand expansion beyond the first 1,280-byte active record;
-- map more operand families;
-- map variable-length function encodings;
-- validate generated multi-network streams;
-- preserve all non-program project resources.
+The <=55 limit deliberately avoids testing the unresolved wrap behavior of the 0xCA/0xCB length fields.
+
+## Still open
+
+- behavior of 0xCA/0xCB beyond the current range;
+- programs crossing larger internal boundaries;
+- full grammar needed to infer network boundaries without LDR;
+- complete timer/counter parameter encoding;
+- arbitrary project generation without a valid PDW template.
