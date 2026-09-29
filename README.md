@@ -1,68 +1,49 @@
-# GX-Text-Writer + GXW-Tools + mView-Tools
+# PLC-Tools
 
-Repositorio de herramientas para automatizar el flujo Mitsubishi/Coolmay desde una especificación validable hasta los artefactos nativos.
+Herramientas para automatización, lectura, transformación y validación de proyectos PLC/HMI, organizadas por fabricante y con una capa común futura para intercambio de lógica.
 
-- **GX-Text-Writer/**: escritura asistida de Ladder en GX Works2/3.
-- **GXW-Tools/**: lectura, auditoría, modificación y round-trip de proyectos GX Works2 `.gxw` (Ladder ordinario y Device Comments/tabla de nombres por dispositivo).
-- **mView-Tools/**: generación, lectura, modificación y validación de archivos de HMI mView (`.tag`, `.sca` y `.vxf`).
+## Fabricantes
 
-## Objetivo
+### Coolmay
 
-La IA trabaja sobre una representación declarativa legible; los compiladores determinísticos son responsables de la serialización binaria, tamaños, hashes, CRC y validación.
+- **Coolmay/GX-Text-Writer/**: escritura asistida de Ladder en GX Works2/3.
+- **Coolmay/GXW-Tools/**: lectura, auditoría, modificación y round-trip de proyectos GX Works2 .gxw.
+- **Coolmay/mView-Tools/**: generación, lectura, modificación y validación de proyectos HMI mView (.tag, .sca y .vxf).
 
-```text
-documentación / requisitos
-        ↓
-        IA
-        ↓
- ┌───────────────────────────┬───────────────────────────┐
- │ PLC spec / Ladder         │ HMI Project Spec         │
- │ + tabla de dispositivos   │ JSON validado            │
- └─────────────┬─────────────┴─────────────┬─────────────┘
-               ↓                           ↓
-      GX-Text-Writer / GXW-Tools     mView-Tools
-               ↓                           ↓
-         proyecto .gxw          .tag / .sca / .vxf
-               ↓                           ↓
-      validación / round-trip       validación binaria
-               ↓                           ↓
-             GX Works2                    mView
-```
+### FATEK
 
-La IA **no debe escribir binarios a ciegas**. Debe producir una especificación verificable; las rutinas de este repo son las responsables de compilar, reconstruir y validar los artefactos finales.
+- **FATEK/WinProLadder/**: ingeniería inversa y herramientas para proyectos WinProLadder .pdw y formatos de intercambio .ldr/.tab/.spf/.txt.
 
-## GXW
+## Dirección técnica
 
-La baseline de la estampadora permitió cerrar offline el flujo:
+La IA trabaja sobre una representación declarativa verificable; los adaptadores determinísticos por fabricante son responsables de serialización binaria, tamaños, hashes, CRC, checksums y validación.
 
-```text
-.gxw
- -> CFB/OLE exterior
- -> _hdb CFB anidado
- -> history.xml / recursos lógicos
- -> *.Program.pou / *.res
- -> Ladder interpretable
- -> edición
- -> reconstrucción de ambas capas
- -> validación de tamaño + MD5 + recursos no modificados
-```
+    requisitos / documentación
+              |
+              v
+        representación común
+          /           \
+         v             v
+      Coolmay         FATEK
+     GXW/mView     PDW/WinProLadder
+         \             /
+          v           v
+          validación / round-trip
 
-La tabla que el proyecto usa como nombres legibles de dispositivos (`B1`, `STATE`, `EV1_P1`, etc.) está en `COMMENT.qcd` como **Device Comments**. Los verdaderos Global/Local Labels (`Global1.gh`, `*.Labels.lh`) son otra estructura y están vacíos en esta baseline.
+La meta no es esconder diferencias entre fabricantes. La lógica IEC reutilizable vive en una capa común; hardware, memoria, tablas, comunicaciones y extensiones específicas permanecen en adaptadores por marca.
 
-## VXF
+## Reglas
 
-Los proyectos completos de mView usan un contenedor `vxpm + zlib`. Las
-mutaciones de escenas deben reconstruir también el bloque superior
-`0x10000004` (size + CRC16/MODBUS). No hacerlo puede disparar el mensaje
-engañoso de mView `HMI models are not supported, can't open!`.
+- No escribir binarios propietarios a ciegas.
+- Todo writer debe partir de un formato suficientemente entendido y contar con round-trip.
+- Los fixtures de ingeniería inversa se comparan con cambios unitarios.
+- Hechos observados e hipótesis se documentan por separado.
+- Los cambios de estructura de repositorio deben conservar contenido e historia Git.
 
-La rutina segura está en `mView-Tools/vxf-editor/vxf_core.py`.
+## Estado existente
 
-Ver:
+El flujo Coolmay/GXW ya puede descomponer el contenedor CFB/OLE exterior, abrir el CFB anidado _hdb, interpretar recursos lógicos y reconstruir ambas capas. Las Device Comments del proyecto viven en COMMENT.qcd; Global/Local Labels son estructuras distintas.
 
-- [`GXW-Tools/README.md`](GXW-Tools/README.md)
-- [`GXW-Tools/FORMAT_LABELS.md`](GXW-Tools/FORMAT_LABELS.md)
-- [`mView-Tools/README.md`](mView-Tools/README.md)
-- [`mView-Tools/vxf-editor/README.md`](mView-Tools/vxf-editor/README.md)
-- [`mView-Tools/vxf-editor/FORMAT_VXF.md`](mView-Tools/vxf-editor/FORMAT_VXF.md)
-- [`mView-Tools/AI_ARCHITECTURE.md`](mView-Tools/AI_ARCHITECTURE.md)
+Los proyectos mView VXF usan un contenedor vxpm + zlib. Las mutaciones de escenas reconstruyen también el bloque superior 0x10000004 con tamaño + CRC16/MODBUS.
+
+La línea FATEK comenzó con análisis diferencial de VACIO.pdw y X0-Y0.pdw. Ver FATEK/WinProLadder/README.md y FATEK/WinProLadder/docs/FORMAT_PDW.md.
