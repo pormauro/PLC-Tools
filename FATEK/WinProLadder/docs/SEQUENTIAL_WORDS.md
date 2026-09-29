@@ -130,3 +130,29 @@ Nuestro agrupamiento diagnóstico en words little-endian muestra esos pares como
 - **candidate**: hipótesis preparada para el próximo probe.
 
 Nunca promover `accepted` a `canonical` o `confirmed semantic` sin la validación visual correspondiente.
+
+
+## Empty network marker
+
+`todo v2.pdw` begins with:
+
+    EB5F EB5F
+
+and WinProLadder visibly shows N000 and N001 as empty. The user had attempted the same failed LDR import twice, and each attempt shifted all existing networks down by one.
+
+Therefore, for the observed sequential stream:
+
+    0xEB5F = empty network
+
+This gives the first explicit network-boundary/control token identified directly in PDW code.
+
+## Rejected T/C index probe
+
+Changing:
+
+    9003 -> 9103
+    9005 -> 9105
+
+through LDR did not produce T1/C1. WinProLadder displayed T0/C0 and saved the words back as 9003/9005.
+
+The index location remains unresolved. Direct-PDW probes are used next to determine whether this is LDR canonicalization or genuinely the wrong field.
