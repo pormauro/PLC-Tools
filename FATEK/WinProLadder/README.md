@@ -4,21 +4,23 @@ Ingeniería inversa reproducible de proyectos FATEK WinProLadder (.pdw) y format
 
 ## Estado
 
-**Fase 2 inicial — writer mínimo validado y estructura multi-network localizada.**
+**Fase 2 — writer mínimo validado; writer secuencial corto en validación externa.**
 
 Ya está demostrado:
 
 - recuperación de imagen de programa de 20K words;
 - mutación PDW real aceptada por WinProLadder;
 - X/Y indices 0,1,2;
-- checksum aditivo de programa;
+- checksum aditivo;
 - word count, complement y end pointers;
+- fórmulas de metadata confirmadas con 0, 2, 13 y 36 words;
 - LDR importable y registros de network delimitados;
 - relación exacta entre LDR por-network y stream PDW;
 - M ORG/NOT/OUT/OUT NOT;
 - SET/RST normal y P;
 - TU/TD en los casos observados;
-- localización de bloques timer y counter.
+- PV de timer/counter confirmado para 10, 25 y 100;
+- reconstrucción sintética de un programa timer+counter idéntica al PDW guardado por WinProLadder desde el byte semántico 2 en adelante.
 
 ## Herramientas
 
@@ -29,13 +31,17 @@ Ya está demostrado:
     python FATEK/WinProLadder/pdw_tools/analyze.py recover-program proyecto.pdw
     python FATEK/WinProLadder/pdw_tools/analyze.py write-minimal template.pdw salida.pdw --x 2 --y 0
 
-El writer mínimo no sobrescribe el original y valida el resultado decodificándolo.
+Writer secuencial experimental, limitado a <=55 words:
+
+    python FATEK/WinProLadder/pdw_tools/analyze.py \
+      write-sequential-experimental template.pdw salida.pdw \
+      0x1C48 0x1D68 0x40F9 0x1900 0x9005 0xFC6F 0x1AC8
 
 ### LDR
 
     python FATEK/WinProLadder/ldr_tools/analyze.py varios.ldr
 
-Ahora separa networks, longitudes, code words, trailers y anotaciones conocidas.
+Separa network records, longitudes, code words, trailers y anotaciones conocidas.
 
 ## Documentación
 
@@ -44,6 +50,8 @@ Ahora separa networks, longitudes, code words, trailers y anotaciones conocidas.
 - `docs/SEQUENTIAL_WORDS.md`
 - `docs/FORMAT_LDR.md`
 - `docs/MINIMAL_WRITER_VALIDATION.md`
+- `docs/VARIOS_FIXTURE.md`
+- `docs/TIMER_COUNTER_ROUNDTRIP.md`
 - `fixtures/MANIFEST.md`
 
 ## Arquitectura objetivo
@@ -60,13 +68,10 @@ Ahora separa networks, longitudes, code words, trailers y anotaciones conocidas.
 
 ## Próxima prioridad
 
-Aislar individualmente:
-
-1. timer T0 con cambios de PV/base;
-2. counter C0 con CK/CLR/PV;
-3. AND y OR simples sin ramas complejas;
-4. dos networks mínimos;
-5. SET/RST P sin otros cambios;
-6. crecimiento a más de un registro de 1.280 bytes.
-
-Después se avanza sobre tablas, comentarios, I/O, comunicaciones y hardware.
+1. validar externamente TEST-GENERATED-TIMER-COUNTER.pdw;
+2. aislar T0 -> T1 y C0 -> C1;
+3. probar PV >255;
+4. separar CK/CLR y outputs del counter;
+5. mapear AND/OR simples y branches;
+6. cruzar el límite donde cambian 0xCA/0xCB;
+7. luego tablas, comentarios, I/O, comunicaciones y hardware.
