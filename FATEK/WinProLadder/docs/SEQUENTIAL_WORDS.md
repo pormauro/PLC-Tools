@@ -1,6 +1,6 @@
 # Sequential words — confirmed map
 
-Estado: **mapa incremental basado en fixtures controlados y validación visual WinProLadder**.
+Estado: **mapa incremental basado en fixtures controlados, LDR importado y guardados canónicos de WinProLadder**.
 
 ## X / Y mínimos
 
@@ -22,21 +22,9 @@ Writer externo validado en WinProLadder hasta índice 2.
 
 ## Hallazgos del fixture varios
 
-La captura de pantalla, `varios.pdw` y `varios.ldr` representan exactamente el mismo programa de 8 networks.
-
-### N000
-
-Pantalla:
-
-    X1 en paralelo con Y0
-    luego X0 NC
-    OUT Y0
-
-Words:
+### Branch N000
 
     0140 00A1 0090 00C1
-
-Mapeo:
 
 | Word | Instrucción |
 |---:|---|
@@ -45,7 +33,7 @@ Mapeo:
 | 0x0090 | AND NOT X0 |
 | 0x00C1 | OUT Y0 |
 
-### M coils
+### M
 
 N001:
 
@@ -57,11 +45,7 @@ corresponde a:
     OUT M1
     OUT NOT M2
 
-Para los M observados, el byte alto es:
-
-    0x10 + M_index
-
-Mapa confirmado:
+Para los M observados, el byte alto es `0x10 + M_index`.
 
 | low byte | instrucción M |
 |---:|---|
@@ -70,9 +54,7 @@ Mapa confirmado:
 | 0xC8 | OUT M |
 | 0xD8 | OUT NOT M |
 
-### SET / RST normal y por pulso
-
-Bytes/words observados:
+### SET / RST normal y P
 
 | Forma | function word | operand word |
 |---|---:|---:|
@@ -81,50 +63,85 @@ Bytes/words observados:
 | RST M4 | 0xC4FC | 0x1408 |
 | RST P M6 | 0xC4F8 | 0x1608 |
 
-Separación empírica:
-
-- SET vs RST: `0x82..` vs `0xC4..`;
-- normal vs P: low byte `FC` vs `F8`;
-- operand M usa forma `0x(0x10+index)08` en este contexto.
+- SET vs RST: `0x82..` vs `0xC4..`
+- normal vs P: `FC` vs `F8`
+- operand M observado: `0x(0x10+index)08`
 
 ### Diferencial / flancos
-
-Observados:
 
     0x00EA = TU sobre estado de línea
     0x00E8 = TD sobre estado de línea
 
-Para contactos de borde al inicio de network se observa un prefijo:
+Contactos de borde observados:
 
     0x00E0 + 0x1348 -> ORG TU M3
     0x00E0 + 0x1758 -> ORG TD M7
 
-No generalizar todavía ese prefijo a otras familias sin fixture.
+## Timer — evidencia actual
 
-## Timer y counter — estructura localizada, campos internos todavía parciales
-
-N006, Timer T0, base .01S, PV=10, TUP -> M9:
+T0 PV10:
 
     1B48 80FD 0A00 9003 FC6F 19C8
 
-Confirmado:
+T0 PV25 guardado por WinProLadder:
 
-    1B48 = ORG M11
-    19C8 = OUT M9
+    1B48 80FD 1900 9003 FC6F 19C8
 
-El bloque intermedio corresponde al timer mostrado, pero los subcampos todavía no se etiquetan individualmente.
+T1 PV25 guardado tras importar el probe T1:
 
-N007, Counter C0, PV=100, CUP -> M10 con M12/M13 como entradas:
+    1B48 81FD 1900 9003 FC6F 19C8
+
+Por lo tanto:
+
+- `0x80FD` = T0 en este bloque;
+- `0x81FD` = T1;
+- PV es un word inmediato little-endian;
+- T0 -> T1 cambia sólo el byte alto `0x80 -> 0x81`.
+
+La extrapolación Tn = `(0x80+n)<<8 | 0xFD` sólo está confirmada para n=0,1 hasta probar T50.
+
+## Counter — evidencia actual
+
+C0 PV100 original:
 
     1C48 1D68 40F9 6400 9005 FC6F 1AC8
 
-Confirmado:
+C0 PV25:
 
-    1C48 = ORG M12
-    1AC8 = OUT M10
+    1C48 1D68 40F9 1900 9005 FC6F 1AC8
 
-El resto se conserva como bloque de counter hasta aislar CK/CLR/PV en fixtures unitarios.
+Probe LDR C1 importado:
+
+    ... 41F9 1900 ...
+
+Después de guardar el proyecto, WinProLadder serializó canónicamente:
+
+    1C48 1D68 41FD 1900 9005 FC6F 1AC8
+
+Hallazgo importante:
+
+- C0 observado canónico: `0x40F9`;
+- C1 guardado canónico: `0x41FD`;
+- `0x41F9` fue aceptado por el importador LDR, pero WinProLadder lo normalizó a `0x41FD`.
+
+No generalizar todavía Cn sólo cambiando el byte alto de C0. El probe siguiente usa C2=`0x42FD` para verificar la familia canónica C1+.
+
+## Preset PV
+
+Los casos controlados confirman:
+
+    PV 10  -> word 0x000A
+    PV 25  -> word 0x0019
+    PV 100 -> word 0x0064
+
+Pendiente: PV >255 para confirmar explícitamente los 16 bits.
 
 ## Regla de evidencia
 
-Una secuencia se marca como **confirmada** sólo cuando la semántica está fijada por un fixture controlado o por la captura correspondiente. Los campos internos de bloques complejos permanecen sin nombre hasta aislarse.
+Diferenciamos:
+
+- **observado**: aparece en un fixture;
+- **aceptado**: WinProLadder lo importó/abrió;
+- **canónico**: WinProLadder lo volvió a guardar así.
+
+Esta distinción evita tratar una representación tolerada por el importador como formato canónico de proyecto.
