@@ -1,6 +1,6 @@
 # Candidate program-memory image
 
-Status: **strong empirical identification; minimal instruction words confirmed. Not yet a writer contract.**
+Status: **strong empirical identification; real WinProLadder write/open/check passed.**
 
 ## Exact size match
 
@@ -10,127 +10,123 @@ The first structural group begins at PDW offset `0x120` and consists of exactly 
     40960 / 2 = 20480 16-bit words
     20480 words = 20K words
 
-FATEK documents the FBs control-program capacity as 20K Words. The size match is exact.
+The recovered image consistently contains `FBS40003`, marker `55 AA` at 0x01FE and erased 0xFF program space.
 
-## Erased-record recovery
+Program code begins at:
 
-Records 1..31 are byte-identical inside every current fixture.
-
-Assuming one repeated record represents 1,280 erased bytes filled with `0xFF`:
-
-    key = encrypted_blank_record XOR FF...
-    recovered_record = encrypted_record XOR key
-
-the first 32 records recover coherently.
-
-Observed in all fixtures:
-
-- ASCII `FBS40003` near the beginning;
-- marker `55 AA` at relative offset `0x01FE`;
-- records 1..31 recover exactly to 0xFF;
-- program code starts at relative byte offset `0x0202`, word 257.
+    byte 0x0202
+    word 257
 
 ## Re-save stability
 
-Two independent semantic pairs were tested:
+For both VACIO and X0->Y0 re-saves, the recovered 40,960-byte image differs only at bytes 0x0000..0x0001.
 
-- VACIO.pdw vs VACIO-2.pdw;
-- X0-Y0.pdw vs X0-Y0-2.pdw.
+Those two bytes are treated as save-state/transform state, not ladder semantics.
 
-In both pairs the raw PDW changes in tens of thousands of bytes, but the recovered 40.960-byte image differs only at relative bytes 0x0000..0x0001.
+## Program metadata — CONFIRMED
 
-Therefore:
+The `varios` fixture expands the program from 0/2 words to **36 words**, allowing several fields to be identified algebraically.
 
-- the recovery is stable across saves;
-- bytes 0..1 are save-variant state;
-- byte 2 onward is stable for identical program semantics in the current corpus.
+Let:
 
-The tool therefore exposes both:
+    n = number of sequential code words
+    code = words starting at word 257
 
-- raw recovered SHA-256;
-- semantic SHA-256 with the first recovered word normalized.
+### Word count
 
-## Minimal ladder words — CONFIRMED
+Relative offset:
 
-| Ladder | Word 257 | Word 258 |
-|---|---:|---:|
-| X0 NO -> Y0 | 0x0040 | 0x00C1 |
-| X1 NO -> Y0 | 0x0140 | 0x00C1 |
-| X0 NO -> Y1 | 0x0040 | 0x01C1 |
-| X0 NC -> Y0 | 0x0050 | 0x00C1 |
-| X0 NC -> Y1 | 0x0050 | 0x01C1 |
+    0x0108 = n
 
-For the observed cases:
+Observed:
 
-    word = (device_index << 8) | opcode
+    VACIO       n=0   -> 0x0000
+    minimal     n=2   -> 0x0002
+    varios      n=36  -> 0x0024
 
-Confirmed low-byte opcodes:
+### Count complement
 
-- 0x40: ORG Xn, confirmed for X0/X1;
-- 0x50: ORG NOT Xn, confirmed for X0;
-- 0xC1: OUT Yn, confirmed for Y0/Y1.
+Relative offset:
 
-The LDR export of NC X0 -> Y0 contains literally `50 00 C1 00`, independently confirming the same words and order.
+    0x010A = 0x4EFF - n
 
-## Metadata that changes with a minimal two-word rung
+Observed:
 
-After normalizing the two save-variable bytes, only 13 bytes in the first 1.280-byte active record vary across the current semantic fixtures.
+    n=0   -> 0x4EFF
+    n=2   -> 0x4EFD
+    n=36  -> 0x4EDB
 
-### Relative 0x00CA..0x00CD
+### Code end pointers
 
-| Fixture | bytes |
-|---|---|
-| VACIO | 23 00 FF FF |
-| X0-Y0 | 2B FF 00 01 |
-| X1-Y0 | 2B FF 00 02 |
-| X0-Y1 | 2B FF 00 02 |
-| NC-X0-Y0 | 2B FF 10 01 |
-| NC-X0-Y1 | 2B FF 10 02 |
+Relative offsets 0x010E and 0x0110 are identical:
 
-Observations only, not yet contract:
+    code_end = 0x0202 + 2*n
 
-- 0x00CA changes with empty vs non-empty program;
-- 0x00CC distinguishes NO (00) vs NC (10) in these fixtures;
-- 0x00CD changes with the observed operand indices.
+Observed:
 
-### Relative control bytes
+    n=0   -> 0x0202
+    n=2   -> 0x0206
+    n=36  -> 0x024A
 
-| Offset | VACIO | all current two-word rungs |
-|---:|---:|---:|
-| 0x0103 | 01 | 00 |
-| 0x0108 | 00 | 02 |
-| 0x010A | FF | FD |
-| 0x010E | 02 | 06 |
-| 0x0110 | 02 | 06 |
+### Additive code checksum
 
-The symmetry strongly suggests count/length/index fields, but their exact semantics require programs with 1, 3+ words and multiple networks.
+Relative offset:
 
-### Relative code area
+    0x00CC = (sum(code_words) - 1) & 0xFFFF
 
-| Offset | Meaning |
-|---:|---|
-| 0x01FE | marker 55 AA |
-| 0x0200..0x0201 | 00 FF in current fixtures |
-| 0x0202 | first sequential word |
-| 0x0204 | second sequential word |
-| following | FF until more code exists |
+This now matches all current source fixtures, including the 36-word `varios.pdw`.
 
-## Experimental extraction
+For `varios`:
 
-    python FATEK/WinProLadder/pdw_tools/analyze.py recover-program X0-Y0.pdw
-    python FATEK/WinProLadder/pdw_tools/analyze.py recover-program X0-Y0.pdw --output program_candidate.bin
+    sum(words) - 1 = 0x4A57
+    stored         = 0x4A57
 
-The source PDW is never modified.
+For VACIO, an empty sum gives:
 
-## Writer gate
+    -1 & 0xFFFF = 0xFFFF
 
-Before a PDW writer:
+which is exactly the stored value.
 
-1. validate device-index encoding beyond 0/1;
-2. map AND/OR/SET/RST/timer/counter;
-3. map variable-length instructions;
-4. prove control/count fields with different program lengths;
-5. understand save-variant/integrity fields;
-6. test multiple networks;
-7. reconstruct a copy and open it successfully in WinProLadder;
-8. verify semantic round-trip and project configuration preservation.
+### Length-derived byte
+
+Relative byte 0x00CA matches all current lengths:
+
+    byte_0xCA = (0x23 + 4*n) & 0xFF
+
+Observed:
+
+    n=0   -> 0x23
+    n=2   -> 0x2B
+    n=36  -> 0xB3
+
+Byte 0x00CB remains unresolved and must not yet be synthesized generically.
+
+## Multiple networks
+
+`varios.pdw` contains 8 networks and 36 sequential words.
+
+Its recovered code area is the exact concatenation of the 8 `varios.ldr` network code payloads in ladder order N000 -> N007.
+
+The previously identified second structural group still differs only in the same 8 save-state bytes, even between VACIO and this 8-network project.
+
+Therefore no separate network-boundary table has yet been observed there.
+
+## Writer status
+
+The template-preserving writer has passed WinProLadder open + Syntax Check for:
+
+- X0 -> Y0 transformed to X1 -> Y0;
+- X2 -> Y0;
+- X0 -> Y2.
+
+The high-byte X/Y index rule is therefore confirmed for indices 0, 1 and 2.
+
+## Still required before arbitrary PDW generation
+
+- identify bytes 0x00CB and 0x0103;
+- validate metadata at additional lengths/network counts;
+- understand expansion beyond the first 1,280-byte active record;
+- map more operand families;
+- map variable-length function encodings;
+- validate generated multi-network streams;
+- preserve all non-program project resources.
