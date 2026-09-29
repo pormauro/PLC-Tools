@@ -15,18 +15,19 @@ Los binarios originales no se modifican. Este manifiesto permite comprobar ident
 | NC-X0-Y0.pdw | Contacto NC X0 -> OUT Y0 | 98.871 | 6e8869d39eb9d6157a637a8a58b5ed941ed9c56f9b608df3e4f2331850254fea |
 | NC-X0-Y1.pdw | Contacto NC X0 -> OUT Y1 | 98.871 | b22adb9b5a6220fde71a3de60612071f62b3a26a6fce45f763b6dbd8e8e94db9 |
 | NC-X0-Y0.ldr | Export Ladder Diagram del fixture NC-X0-Y0 | 277 | 12ad626d979d9a8f02d5ddeeda9a78af319befba9c2932c3d5522eac3ee8d0e5 |
+| varios.pdw | 8 networks: ramas, M, edge, SET/RST normal/P, timer y counter | 98.871 | f808927f76adb5386369a9492f1d8512d3382bcffb1a0b2b4ad25f1769e191a6 |
+| varios.ldr | Export Ladder Diagram exacto de varios.pdw | 422 | 7ffb79a3137f29bbb50c1441f37dffe83419ebbebec7c3623b8a5b75564fe2a3 |
 
-## Hallazgos reproducibles con este corpus
+## Hallazgos reproducibles
 
-- VACIO.pdw y VACIO-2.pdw recuperan la misma imagen de programa al ignorar sólo los 2 primeros bytes variables de guardado.
-- X0-Y0.pdw y X0-Y0-2.pdw hacen lo mismo.
-- X0 -> Y0: words `0x0040 0x00C1`.
-- X1 -> Y0: words `0x0140 0x00C1`.
-- X0 -> Y1: words `0x0040 0x01C1`.
-- NC X0 -> Y0: words `0x0050 0x00C1`.
-- NC X0 -> Y1: words `0x0050 0x01C1`.
-- NC-X0-Y0.ldr contiene literalmente `50 00 C1 00` en su payload.
+- Re-save: el programa recuperado es estable salvo el primer word de estado.
+- X/Y: ORG/ORG NOT/OUT e índices 0..2 validados externamente.
+- LDR simple: mutación NC -> NO importada correctamente.
+- varios: 36 words, 8 networks, y el stream PDW coincide exactamente con la concatenación de los 8 payloads LDR en orden N000 -> N007.
+- checksum PDW: `(sum(code_words)-1) & 0xFFFF`.
+- SET/RST normal y P quedan separados en el stream.
+- timer/counter quedan localizados como bloques para el siguiente aislamiento.
 
 ## Política
 
-Antes de analizar un fixture, verificar tamaño y SHA-256. Los experimentos de escritura, cuando existan, se harán siempre sobre copias derivadas y nunca sobre estos originales.
+Los originales se usan sólo como fixtures de lectura. Toda escritura se hace sobre copias derivadas.
