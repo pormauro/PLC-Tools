@@ -29,12 +29,41 @@ KNOWN_M_OPCODES = {
     0xD8: "OUT NOT",
 }
 
+KNOWN_EXACT_WORDS = {
+    0x41FD: ("FUN87 T.01S", "visual-confirmed; FATEK catalog identifies FUN87 as .01S accumulative timer"),
+    0x42FD: ("FUN88 T.1S", "visual-confirmed; FATEK catalog identifies FUN88 as .1S accumulative timer"),
+    0xB2F5: ("FUN43 NBM", "visual-confirmed in todooo fixture"),
+}
+
+GENERAL_TIMER_BASE = {
+    0x80FD: (".01S", "visual-confirmed"),
+    0x81FD: (".1S", "visual-confirmed"),
+    0x82FD: ("1S", "candidate; prepared probe"),
+}
+
 
 def c_string(block: bytes) -> str:
     return block.split(b"\x00", 1)[0].decode("ascii", errors="replace")
 
 
+def be_value_from_diagnostic_word(word: int) -> int:
+    """Interpret the two raw code bytes as a big-endian immediate value."""
+    return int.from_bytes(word.to_bytes(2, "little"), "big")
+
+
 def decode_word(word: int) -> dict | None:
+    exact = KNOWN_EXACT_WORDS.get(word)
+    if exact is not None:
+        text, evidence = exact
+        return {
+            "word": word,
+            "hex_word": f"0x{word:04X}",
+            "mnemonic": text,
+            "operand": None,
+            "text": text,
+            "evidence": evidence,
+        }
+
     opcode = word & 0xFF
     high = (word >> 8) & 0xFF
 
@@ -116,6 +145,62 @@ def decode_function_pair(word: int, operand_word: int) -> dict | None:
     }
 
 
+def decode_timer_counter_block(words: list[int], index: int) -> tuple[dict, int] | None:
+    word = words[index]
+
+    # General timer block body:
+    #   base-selector, PV(raw big-endian bytes), T-ref, FC6F
+    if word in GENERAL_TIMER_BASE and index + 3 < len(words):
+        pv_word = words[index + 1]
+        ref_word = words[index + 2]
+        trailer = words[index + 3]
+        if trailer == 0xFC6F and (ref_word & 0xFF) == 0x03:
+            ref_high = (ref_word >> 8) & 0xFF
+            timer_index = ref_high - 0x90 if ref_high >= 0x90 else None
+            base, base_evidence = GENERAL_TIMER_BASE[word]
+            ref_evidence = (
+                "T0 visual-confirmed" if timer_index == 0
+                else "candidate T index encoding"
+            )
+            return ({
+                "kind": "general_timer",
+                "words": [f"0x{w:04X}" for w in words[index:index + 4]],
+                "time_base": base,
+                "time_base_evidence": base_evidence,
+                "pv": be_value_from_diagnostic_word(pv_word),
+                "pv_raw_bytes": pv_word.to_bytes(2, "little").hex(),
+                "timer_ref_raw": f"0x{ref_word:04X}",
+                "timer_index_candidate": timer_index,
+                "timer_ref_evidence": ref_evidence,
+            }, 4)
+
+    # General C0-family counter block body:
+    #   40F9, PV(raw big-endian bytes), C-ref, FC6F
+    if word == 0x40F9 and index + 3 < len(words):
+        pv_word = words[index + 1]
+        ref_word = words[index + 2]
+        trailer = words[index + 3]
+        if trailer == 0xFC6F and (ref_word & 0xFF) == 0x05:
+            ref_high = (ref_word >> 8) & 0xFF
+            counter_index = ref_high - 0x90 if ref_high >= 0x90 else None
+            ref_evidence = (
+                "C0 visual-confirmed" if counter_index == 0
+                else "candidate C index encoding"
+            )
+            return ({
+                "kind": "general_counter",
+                "words": [f"0x{w:04X}" for w in words[index:index + 4]],
+                "pv": be_value_from_diagnostic_word(pv_word),
+                "pv_raw_bytes": pv_word.to_bytes(2, "little").hex(),
+                "counter_ref_raw": f"0x{ref_word:04X}",
+                "counter_index_candidate": counter_index,
+                "counter_ref_evidence": ref_evidence,
+                "evidence": "0x40F9 visually confirmed for C0 block",
+            }, 4)
+
+    return None
+
+
 def annotate_code(code: bytes) -> list[dict]:
     words = [
         struct.unpack_from("<H", code, off)[0]
@@ -125,6 +210,13 @@ def annotate_code(code: bytes) -> list[dict]:
     i = 0
     while i < len(words):
         word = words[i]
+
+        block = decode_timer_counter_block(words, i)
+        if block is not None:
+            decoded_block, consumed = block
+            out.append({"word_index": i, **decoded_block})
+            i += consumed
+            continue
 
         if i + 1 < len(words):
             fn = decode_function_pair(word, words[i + 1])
