@@ -71,13 +71,22 @@ class MinimalWriterTests(unittest.TestCase):
             )
             self.assertEqual(recovered[0xCC:0xCE], b"\x10\x03")
 
+    def test_writer_accepts_confirmed_index_2(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            template = Path(tmp) / "template.pdw"
+            output = Path(tmp) / "out.pdw"
+            synthetic_template(template)
+            result = pdw.write_minimal_rung(template, output, 2, 0)
+            self.assertEqual(result["scope"], "fixture-confirmed")
+            self.assertEqual(result["contact_word"], "0x0240")
+
     def test_writer_refuses_unconfirmed_index_without_opt_in(self):
         with tempfile.TemporaryDirectory() as tmp:
             template = Path(tmp) / "template.pdw"
             output = Path(tmp) / "out.pdw"
             synthetic_template(template)
             with self.assertRaises(ValueError):
-                pdw.write_minimal_rung(template, output, 2, 0)
+                pdw.write_minimal_rung(template, output, 3, 0)
 
     def test_writer_never_overwrites_template(self):
         with tempfile.TemporaryDirectory() as tmp:
