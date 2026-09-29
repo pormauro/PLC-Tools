@@ -38,3 +38,6 @@ jobs:
         run: |
           python FATEK/WinProLadder/pdw_tools/analyze.py --help
           python FATEK/WinProLadder/ldr_tools/analyze.py --help
+
+      - name: Run semantic regression vectors
+        run: python FATEK/WinProLadder/tests/test_semantic_vectors.py
