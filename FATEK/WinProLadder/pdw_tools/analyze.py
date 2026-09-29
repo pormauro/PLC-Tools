@@ -332,9 +332,9 @@ def write_minimal_rung(
         raise ValueError("output must be different from template")
     if output_path.exists() and not force:
         raise FileExistsError(f"output already exists: {output_path}")
-    if (x_index > 1 or y_index > 1) and not allow_unconfirmed_index:
+    if (x_index > 2 or y_index > 2) and not allow_unconfirmed_index:
         raise ValueError(
-            "indices above 1 are not fixture-confirmed yet; pass "
+            "indices above 2 are not fixture-confirmed yet; pass "
             "--allow-unconfirmed-index for an explicit experiment"
         )
 
@@ -373,9 +373,49 @@ def write_minimal_rung(
         "checksum": f"0x{checksum:04X}",
         "ladder": f"{'ORG NOT' if nc else 'ORG'} X{x_index} ; OUT Y{y_index}",
         "scope": (
-            "fixture-confirmed" if x_index <= 1 and y_index <= 1
+            "fixture-confirmed" if x_index <= 2 and y_index <= 2
             else "experimental-unconfirmed-index"
         ),
+    }
+
+
+def summarize_program_metadata(recovered: bytes) -> dict:
+    """Summarize control fields now tied to the recovered code stream."""
+    words = words_le(recovered)
+    count = int.from_bytes(recovered[0x108:0x10A], "little")
+    code_start = PROGRAM_CODE_START_WORD
+    code = words[code_start:code_start + count]
+    checksum = int.from_bytes(recovered[0xCC:0xCE], "little")
+    complement = int.from_bytes(recovered[0x10A:0x10C], "little")
+    end_a = int.from_bytes(recovered[0x10E:0x110], "little")
+    end_b = int.from_bytes(recovered[0x110:0x112], "little")
+    expected_checksum = (sum(code) - 1) & 0xFFFF
+    expected_complement = (0x4EFF - count) & 0xFFFF
+    expected_end = 0x202 + 2 * count
+    expected_ca_low = (0x23 + 4 * count) & 0xFF
+    return {
+        "code_word_count": count,
+        "code_word_count_field_offset": "0x108",
+        "code_words_hex": [f"0x{word:04X}" for word in code],
+        "checksum_field_offset": "0x0CC",
+        "checksum": f"0x{checksum:04X}",
+        "expected_sum_words_minus_one": f"0x{expected_checksum:04X}",
+        "checksum_matches": checksum == expected_checksum,
+        "count_complement_field_offset": "0x10A",
+        "count_complement": f"0x{complement:04X}",
+        "expected_count_complement": f"0x{expected_complement:04X}",
+        "count_complement_matches": complement == expected_complement,
+        "code_end_a_field_offset": "0x10E",
+        "code_end_b_field_offset": "0x110",
+        "code_end_a": f"0x{end_a:04X}",
+        "code_end_b": f"0x{end_b:04X}",
+        "expected_code_end": f"0x{expected_end:04X}",
+        "code_end_matches": end_a == expected_end and end_b == expected_end,
+        "length_derived_byte_0xCA": recovered[0xCA],
+        "expected_length_derived_byte_0xCA": expected_ca_low,
+        "length_derived_byte_0xCA_matches": recovered[0xCA] == expected_ca_low,
+        "byte_0xCB_unknown": recovered[0xCB],
+        "byte_0x103_unknown": recovered[0x103],
     }
 
 
@@ -443,6 +483,7 @@ def summarize_program_candidate(data: bytes, max_words: int = 64) -> dict:
         "save_variant_word0": f"0x{words[0]:04X}" if words else None,
         "program_code_start_word": PROGRAM_CODE_START_WORD,
         "minimal_sequential_decode": decoded,
+        "program_metadata": summarize_program_metadata(recovered),
     }
 
 
