@@ -20,7 +20,9 @@ Confirmado actualmente:
 - timer general T0 con bases .01S y .1S;
 - counter normal C0;
 - preset T/C en bytes high-to-low;
-- diferenciación explícita entre accepted/canonical/visual-confirmed.
+- diferenciación explícita entre accepted/canonical/visual-confirmed;
+- `0xEB5F` identificado como network vacío;
+- fórmulas de metadata verificadas también con 28 words (`todo v2`).
 
 El fixture `todooo.pdw` fue especialmente útil para **refutar** hipótesis que el importador aceptaba pero WinProLadder interpretaba con otra semántica.
 
@@ -63,11 +65,10 @@ El fixture `todooo.pdw` fue especialmente útil para **refutar** hipótesis que 
 
 ## Próxima prioridad
 
-1. probar T-index en el campo candidato `9003`;
-2. probar C-index en `9005`;
-3. confirmar PV300 con bytes `01 2C`;
-4. confirmar general timer 1S;
-5. luego T50/C2;
-6. seguir con AND/OR/branches y construcción automática de networks;
-7. cruzar el primer límite de 1.280 bytes;
-8. tablas, comentarios, I/O, comunicaciones y hardware.
+1. probar `9103/9105` directamente en PDW, saltando el importador LDR;
+2. probar `82FD` directamente en PDW para separar semántica raw de fallo de importación;
+3. validar de forma independiente `EB5F` con un PDW que contenga sólo un network vacío;
+4. luego localizar de forma correcta el índice T/C;
+5. seguir con AND/OR/branches y construcción automática de networks;
+6. cruzar el primer límite de 1.280 bytes;
+7. tablas, comentarios, I/O, comunicaciones y hardware.
