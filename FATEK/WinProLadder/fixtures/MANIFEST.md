@@ -19,6 +19,7 @@ Los binarios originales no se modifican. Este manifiesto permite comprobar ident
 | timer + counter.pdw | C0 PV25 + T0 .01S PV25 | 98.871 | 7d02f3902aebae236a41ae0cde16264592af4cd75af62478666522e7a8662c0a |
 | timer + counter 2.pdw | Guardado tras importar probes inicialmente llamados C1/T1; luego visualmente reinterpretados | 98.871 | 6930b15b15d5172caebd07da07e198cf232d617be072926e912afded6041d491 |
 | todooo.pdw | PDW generado + seis probes; autoridad visual para corregir T/C | 98.871 | 8c47cc0a83cc393ca48837abb4e928d8af275168c31c4d582c07f8edbd9525d7 |
+| todo v2.pdw | Cuatro probes válidos + dos imports fallidos que generan N000/N001 vacíos | 98.871 | 9add9b1724c295ffae817cf4ff9e9b20eeb13c25e098ad5d84806e7e39d85e0d |
 
 ## Estado de evidencia
 
@@ -44,7 +45,11 @@ Correcciones:
 - 41FD no es C1: screenshot = FUN87 T.01S;
 - 42FD no es C2: screenshot = FUN88 T.1S;
 - B2F5 no es T50: screenshot = FUN43 NBM;
-- importer acceptance alone is not semantic confirmation.
+- importer acceptance alone is not semantic confirmation;
+- `9103` y `9105` no cambian T0/C0 por LDR y son canonicalizados de vuelta a `9003`/`9005`;
+- dos imports fallidos consecutivos producen dos words `EB5F` y dos networks visibles vacíos;
+- `EB5F` queda confirmado como forma de network vacío en el stream observado;
+- `todo v2.pdw`: 28 words, checksum 0x2987, complemento 0x4EE3 y fin 0x023A; todas las fórmulas siguen cerrando.
 
 ## Política
 
